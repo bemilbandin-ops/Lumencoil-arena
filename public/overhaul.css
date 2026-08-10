@@ -1,0 +1,124 @@
+/* Gameplay visual overhaul — intentionally original, inspired by chunky mobile .io readability. */
+:root{
+  --arena-ui-bg:rgba(13,15,18,.82);
+  --arena-ui-border:rgba(255,255,255,.14);
+  --arena-ui-text:#f5f6f7;
+  --arena-ui-muted:#aab0b8;
+  --arena-accent:#3158ff;
+  --arena-gold:#ffe15a;
+}
+
+html,body,#root,.app{background:#20242a}
+
+/* Avoid a compositor fade on the full-screen canvas. It made brief buffer resets much more obvious. */
+.game-canvas{background:#20242a;transition:none!important;will-change:auto}
+.game-canvas.visible{opacity:1}
+
+/* Compact game-HUD language closer to the supplied references: dark solid pills, big numerals. */
+.score-hud{
+  top:max(12px,env(safe-area-inset-top));
+  left:max(12px,env(safe-area-inset-left));
+  gap:6px;
+  filter:drop-shadow(0 5px 12px rgba(0,0,0,.28));
+}
+.score-hud>div{
+  min-width:70px;
+  padding:8px 12px 7px;
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:999px;
+  background:rgba(10,12,15,.82);
+  backdrop-filter:none;
+  box-shadow:inset 0 1px rgba(255,255,255,.04),0 3px 10px rgba(0,0,0,.18);
+}
+.score-hud>div.primary-stat{
+  min-width:112px;
+  background:linear-gradient(180deg,rgba(21,24,29,.92),rgba(8,10,13,.9));
+  border-color:rgba(255,255,255,.13);
+}
+.score-hud span{color:#a7adb5;font-size:7px;letter-spacing:.13em;text-shadow:0 1px 2px #000}
+.score-hud strong{color:#fff;font-size:15px;line-height:1.05;text-shadow:0 2px 3px rgba(0,0,0,.8)}
+.score-hud .primary-stat strong{font-size:20px;color:#fff}
+
+.leaderboard{
+  top:max(12px,env(safe-area-inset-top));
+  right:max(12px,env(safe-area-inset-right));
+  width:222px;
+  padding:8px;
+  border:0;
+  border-radius:15px;
+  background:rgba(9,11,14,.72);
+  backdrop-filter:none;
+  box-shadow:0 5px 18px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.04);
+}
+.leader-title{margin:0 4px 5px}
+.leaderboard h2{font-size:8px;letter-spacing:.12em;color:#b7bdc5}
+.leader-title>span{color:#ff7d6f;font-size:7px}
+.leader-title>span:before{background:#ff6b5e;box-shadow:none}
+.leader-row{
+  height:27px;
+  grid-template-columns:24px 1fr auto;
+  gap:6px;
+  padding:0 7px;
+  margin-top:2px;
+  border-radius:10px;
+  background:rgba(255,255,255,.025);
+  font-size:11px;
+}
+.leader-row:nth-of-type(2){background:linear-gradient(90deg,#172db0,#243ecf 72%,#1b2fa8)}
+.place{font-weight:950;color:#aeb4bd;text-shadow:0 2px 2px rgba(0,0,0,.65)}
+.place-1{color:var(--arena-gold);font-size:13px}
+.place-2{color:#f1f3f6}.place-3{color:#ffbd84}
+.leader-name{color:#f3f4f6;font-weight:850;text-shadow:0 2px 2px rgba(0,0,0,.72)}
+.leader-score{color:#f6f7f8;font-weight:900;font-size:10px;text-shadow:0 2px 2px rgba(0,0,0,.72)}
+
+/* Touch control: bright physical button rather than a translucent sci-fi orb. */
+.boost-button{
+  width:92px;height:92px;
+  border:5px solid rgba(255,255,255,.72);
+  background:radial-gradient(circle at 36% 30%,#ffbc42 0,#ff8a27 46%,#df4c22 75%,#8f251b 100%);
+  color:#fff;
+  box-shadow:0 5px 18px rgba(0,0,0,.35),inset 0 4px 9px rgba(255,255,255,.35),inset 0 -8px 12px rgba(77,13,10,.24);
+  text-shadow:0 2px 3px rgba(0,0,0,.65);
+}
+.boost-button small{color:rgba(255,255,255,.78)}
+.boost-button:active{transform:scale(.94);filter:saturate(1.15) brightness(1.05)}
+
+.status-card,.replay-badge{
+  background:rgba(10,12,15,.88);
+  border-color:rgba(255,255,255,.15);
+  backdrop-filter:none;
+}
+
+@media (hover:none),(pointer:coarse){
+  .leaderboard{
+    top:max(12px,env(safe-area-inset-top));
+    right:max(10px,env(safe-area-inset-right));
+    bottom:auto;left:auto;
+    width:min(47vw,205px);
+    padding:6px;
+  }
+  .leader-title{display:none}
+  .leader-row{height:28px;font-size:11px}
+  .leader-row:nth-of-type(n+5){display:none}
+  .score-hud{max-width:46vw;display:flex;flex-direction:column;align-items:flex-start}
+  .score-hud>div{min-width:88px;width:auto}
+  .score-hud>div:nth-child(3),.score-hud>div:nth-child(4){display:none}
+  .score-hud>div:nth-child(5){display:block}
+}
+
+@media (max-width:650px){
+  .score-hud{left:max(9px,env(safe-area-inset-left));top:max(9px,env(safe-area-inset-top));gap:5px}
+  .score-hud>div{padding:7px 10px 6px;min-width:82px}
+  .score-hud>div.primary-stat{min-width:96px}
+  .score-hud .primary-stat strong{font-size:18px}
+  .score-hud strong{font-size:14px}
+  .leaderboard{right:max(8px,env(safe-area-inset-right));top:max(9px,env(safe-area-inset-top));width:46vw;max-width:190px}
+  .leader-row{height:27px;grid-template-columns:22px 1fr auto;padding:0 6px}
+  .boost-button{width:86px;height:86px;right:max(18px,env(safe-area-inset-right));bottom:max(22px,env(safe-area-inset-bottom))}
+}
+
+@media (max-width:390px){
+  .leaderboard{width:45vw}
+  .leader-row{font-size:10.5px}
+  .score-hud>div:nth-child(2){display:none}
+}
