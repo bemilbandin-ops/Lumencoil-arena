@@ -1,59 +1,61 @@
 import { clamp } from "../../shared/types.js";
 import { mod } from "./renderMath.js";
-export function drawBackdrop(env, width, height, now, specks) {
+export function drawBackdrop(env, width, height, _now, specks) {
     const { ctx, camera } = env;
-    const floor = ctx.createLinearGradient(0, 0, 0, height);
-    floor.addColorStop(0, "#20252b");
-    floor.addColorStop(.55, "#252a30");
-    floor.addColorStop(1, "#1c2025");
-    ctx.fillStyle = floor;
+    ctx.fillStyle = "#111315";
     ctx.fillRect(0, 0, width, height);
-    const halo = ctx.createRadialGradient(width * .46, height * .42, 0, width * .46, height * .42, Math.max(width, height) * .8);
-    halo.addColorStop(0, "rgba(255,255,255,.035)");
-    halo.addColorStop(.62, "rgba(255,255,255,.008)");
-    halo.addColorStop(1, "rgba(0,0,0,.13)");
-    ctx.fillStyle = halo;
-    ctx.fillRect(0, 0, width, height);
-    for (let i = 0; i < specks.length; i++) {
+    const textureWidth = width + 180, textureHeight = height + 180;
+    for (let i = 0; i < specks.length; i += 5) {
         const s = specks[i];
-        const px = mod(s.x * width - camera.x * .032, width);
-        const py = mod(s.y * height - camera.y * .032, height);
-        const pulse = .84 + Math.sin(now * .0008 + s.x * 15) * .16;
-        ctx.fillStyle = i % 7 === 0 ? `rgba(160,42,45,${s.alpha * pulse})` : `rgba(232,238,244,${s.alpha * .55 * pulse})`;
+        const px = mod(s.x * textureWidth - camera.x * .018, textureWidth) - 90;
+        const py = mod(s.y * textureHeight - camera.y * .018, textureHeight) - 90;
+        const rx = 9 + ((i * 7) % 17), ry = 5 + ((i * 11) % 12);
+        ctx.fillStyle = i % 10 === 0 ? "rgba(255,255,255,.010)" : "rgba(0,0,0,.022)";
         ctx.beginPath();
-        ctx.arc(px, py, s.size, 0, Math.PI * 2);
+        ctx.ellipse(px, py, rx, ry, (s.x - .5) * .7, 0, Math.PI * 2);
         ctx.fill();
     }
-    const spacing = Math.max(74, 94 * camera.zoom);
-    const ox = mod(-camera.x * camera.zoom, spacing), oy = mod(-camera.y * camera.zoom, spacing);
-    ctx.fillStyle = "rgba(255,255,255,.034)";
-    for (let x = ox; x < width; x += spacing)
-        for (let y = oy; y < height; y += spacing)
-            ctx.fillRect(x, y, 1, 1);
+    for (let i = 0; i < specks.length; i += 13) {
+        const s = specks[i];
+        const px = mod(s.x * width - camera.x * .035, width);
+        const py = mod(s.y * height - camera.y * .035, height);
+        const size = Math.max(.45, Math.min(1.15, s.size * .55));
+        ctx.fillStyle = `rgba(205,210,214,${.035 + s.alpha * .34})`;
+        ctx.fillRect(px, py, size, size);
+    }
+    const vignette = ctx.createRadialGradient(width * .5, height * .46, Math.min(width, height) * .12, width * .5, height * .5, Math.max(width, height) * .72);
+    vignette.addColorStop(0, "rgba(0,0,0,0)");
+    vignette.addColorStop(.68, "rgba(0,0,0,.035)");
+    vignette.addColorStop(1, "rgba(0,0,0,.26)");
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, width, height);
 }
 export function drawWorldBoundary(ctx, arenaRadius) {
     ctx.save();
     ctx.beginPath();
+    ctx.arc(0, 0, arenaRadius + 48, 0, Math.PI * 2);
+    ctx.strokeStyle = "#07090b";
+    ctx.lineWidth = 96;
+    ctx.stroke();
+    ctx.beginPath();
     ctx.arc(0, 0, arenaRadius, 0, Math.PI * 2);
-    ctx.strokeStyle = "#11151a";
-    ctx.lineWidth = 56;
+    ctx.strokeStyle = "#15181b";
+    ctx.lineWidth = 30;
     ctx.stroke();
     ctx.beginPath();
     ctx.arc(0, 0, arenaRadius - 5, 0, Math.PI * 2);
-    ctx.strokeStyle = "#5d636b";
-    ctx.lineWidth = 23;
+    ctx.strokeStyle = "#252a2e";
+    ctx.lineWidth = 16;
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(0, 0, arenaRadius - 5, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(238,242,245,.72)";
-    ctx.lineWidth = 7;
-    ctx.setLineDash([24, 20]);
+    ctx.arc(0, 0, arenaRadius - 12, 0, Math.PI * 2);
+    ctx.strokeStyle = "#3b4146";
+    ctx.lineWidth = 5;
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(0, 0, arenaRadius - 25, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(255,96,58,.38)";
-    ctx.lineWidth = 3;
-    ctx.setLineDash([12, 28]);
+    ctx.arc(0, 0, arenaRadius - 15, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(205,211,216,.46)";
+    ctx.lineWidth = 2;
     ctx.stroke();
     ctx.restore();
 }
