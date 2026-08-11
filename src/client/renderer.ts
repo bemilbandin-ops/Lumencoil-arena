@@ -1,2 +1,2 @@
-export { GameRenderer } from "./rendererV2.js";
-export type { RenderPair } from "./rendererV2.js";
+export { GameRenderer } from "./rendering/renderer.js";
+export type { RenderPair } from "./rendering/renderer.js";

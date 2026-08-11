@@ -1,5 +1,5 @@
-import { SKINS, type SkinDefinition } from "../shared/config.js";
-import type { FoodSnapshot, SnakeSnapshot, Vec2 } from "../shared/types.js";
+import { SKINS, type SkinDefinition } from "../../shared/config.js";
+import type { FoodSnapshot, SnakeSnapshot, Vec2 } from "../../shared/types.js";
 
 export function interpolateSnakes(prev: SnakeSnapshot[], next: SnakeSnapshot[], t: number): SnakeSnapshot[] {
   const prevMap = new Map(prev.map(s => [s.id, s]));

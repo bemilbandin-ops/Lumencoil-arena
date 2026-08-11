@@ -1,1 +1,2 @@
-export { GameRenderer } from "./rendererV2.js";
+export { GameRenderer } from "./rendering/renderer.js";
+//# sourceMappingURL=renderer.js.map
