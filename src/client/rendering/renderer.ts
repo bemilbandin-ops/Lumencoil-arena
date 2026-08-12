@@ -83,7 +83,7 @@ export class GameRenderer {
 
   private updateCamera(me: SnakeSnapshot, dt: number, replaying: boolean): void {
     const head = me.body[0]!, desiredZoom = clamp(1.23 - (me.mass - CONFIG.START_MASS) * .00235, .62, 1.23);
-    const smooth = 1 - Math.exp(-dt * (replaying ? 3.2 : 7.2));
+    const smooth = 1 - Math.exp(-dt * (replaying ? 3.2 : CONFIG.LIVE_CAMERA_FOLLOW_RATE));
     if (Math.abs(this.camera.x) < .001 && Math.abs(this.camera.y) < .001) { this.camera.x = head.x; this.camera.y = head.y; }
     else { this.camera.x += (head.x - this.camera.x) * smooth; this.camera.y += (head.y - this.camera.y) * smooth; }
     this.camera.zoom += (desiredZoom - this.camera.zoom) * smooth;

@@ -1,4 +1,5 @@
 import { CONFIG, SKINS } from "../shared/config.js";
+import { resolveBodyContact, resolveHeadContact } from "../shared/combat.js";
 import { clamp, distanceSq, normalizeAngle } from "../shared/types.js";
 import { createBrain, decideBot } from "./botAI.js";
 import { SpatialHash } from "./spatialHash.js";
@@ -71,7 +72,6 @@ export class GameWorld {
         this.removeSnake(snakeId, snake.alive);
         this.ensurePopulation();
     }
-    // Immediate removal is useful for controlled shutdown/tests.
     removeHuman(connectionId) {
         const snake = this.getHumanByConnection(connectionId);
         if (snake)
@@ -235,10 +235,13 @@ export class GameWorld {
         const humans = preferNearHuman
             ? [...this.snakes.values()].filter(s => !s.isBot && s.alive && s.connectionId)
             : [];
+        const encounterAnchors = preferNearHuman && !humans.length
+            ? [...this.snakes.values()].filter(s => s.alive)
+            : humans;
         for (let attempt = 0; attempt < 48; attempt++) {
             let p;
-            if (humans.length && attempt < 30) {
-                const anchor = choose(humans);
+            if (encounterAnchors.length && attempt < 30) {
+                const anchor = choose(encounterAnchors);
                 const a = rand(-Math.PI, Math.PI);
                 const d = rand(820, 1500);
                 p = { x: anchor.x + Math.cos(a) * d, y: anchor.y + Math.sin(a) * d };
@@ -390,18 +393,28 @@ export class GameWorld {
         const alive = [...this.snakes.values()].filter(s => s.alive);
         for (let i = 0; i < alive.length; i++) {
             const a = alive[i];
+            if (dead.has(a.id))
+                continue;
             const protectedA = now - a.spawnedAt < CONFIG.SPAWN_PROTECTION_MS;
-            if (!protectedA && Math.hypot(a.x, a.y) > CONFIG.ARENA_RADIUS - CONFIG.HEAD_RADIUS * 1.45)
+            if (!protectedA && Math.hypot(a.x, a.y) > CONFIG.ARENA_RADIUS - CONFIG.HEAD_RADIUS * 1.45) {
                 dead.set(a.id, null);
+                continue;
+            }
             for (let j = i + 1; j < alive.length; j++) {
                 const b = alive[j];
-                if (protectedA || now - b.spawnedAt < CONFIG.SPAWN_PROTECTION_MS)
+                if (dead.has(b.id) || protectedA || now - b.spawnedAt < CONFIG.SPAWN_PROTECTION_MS)
                     continue;
                 const r = CONFIG.HEAD_RADIUS * 1.82;
-                if (distanceSq(a, b) <= r * r) {
-                    // Deterministic fair rule: near-simultaneous head contact kills both.
-                    dead.set(a.id, b.id);
+                if (distanceSq(a, b) > r * r)
+                    continue;
+                const outcome = resolveHeadContact(a.mass, b.mass);
+                if (outcome === "attacker")
                     dead.set(b.id, a.id);
+                else if (outcome === "defender")
+                    dead.set(a.id, b.id);
+                else {
+                    dead.set(a.id, null);
+                    dead.set(b.id, null);
                 }
             }
         }
@@ -413,10 +426,16 @@ export class GameWorld {
                 if (p.snakeId === s.id)
                     continue;
                 const r = CONFIG.HEAD_RADIUS + CONFIG.BODY_RADIUS * .75;
-                if (distanceSq(s, p) <= r * r) {
-                    dead.set(s.id, p.snakeId);
-                    break;
-                }
+                if (distanceSq(s, p) > r * r)
+                    continue;
+                const owner = this.snakes.get(p.snakeId);
+                if (!owner?.alive || dead.has(owner.id))
+                    continue;
+                if (resolveBodyContact(s.mass, owner.mass) === "attacker")
+                    dead.set(owner.id, s.id);
+                else
+                    dead.set(s.id, owner.id);
+                break;
             }
         }
         for (const [id, killerId] of dead)

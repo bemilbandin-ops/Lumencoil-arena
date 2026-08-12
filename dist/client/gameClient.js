@@ -1,3 +1,4 @@
+import { CONFIG } from "../shared/config.js";
 import { clamp } from "../shared/types.js";
 import { GameAudio } from "./audio.js";
 import { InputController } from "./input.js";
@@ -199,7 +200,7 @@ export class GameClient {
     }
     sendInput(angle, boost, force) {
         const now = performance.now();
-        if (!force && now - this.lastInputSend < 30)
+        if (!force && now - this.lastInputSend < CONFIG.CLIENT_INPUT_SEND_INTERVAL_MS)
             return;
         if (this.ws?.readyState !== WebSocket.OPEN || !this.playerId)
             return;
@@ -221,7 +222,6 @@ export class GameClient {
             const start = Math.max(0, frames.length - Math.min(frames.length, 45));
             const available = frames.length - start;
             const progress = clamp((now - this.replayStartedAt) / this.replayDuration, 0, 1);
-            // Ease through the final seconds, slowing slightly around the collision.
             const eased = 1 - Math.pow(1 - progress, 1.2);
             const f = start + eased * Math.max(1, available - 1);
             const i = Math.min(frames.length - 1, Math.floor(f));
@@ -234,7 +234,7 @@ export class GameClient {
             return { prev: this.snapshots[0].message, next: this.snapshots[0].message, t: 1 };
         const a = this.snapshots[this.snapshots.length - 2];
         const b = this.snapshots[this.snapshots.length - 1];
-        const target = now - 96;
+        const target = now - CONFIG.LIVE_INTERPOLATION_DELAY_MS;
         const t = clamp((target - a.at) / Math.max(1, b.at - a.at), 0, 1);
         return { prev: a.message, next: b.message, t };
     }
