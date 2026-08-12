@@ -2,6 +2,7 @@ import { CONFIG } from "../shared/config.js";
 import { clamp, type DeathStats, type LeaderboardEntry, type SelfStats, type ServerMessage, type SnapshotMessage, type WorldEvent } from "../shared/types.js";
 import { GameAudio } from "./audio.js";
 import { InputController } from "./input.js";
+import { previewLocalSnake } from "./inputPreview.js";
 import { GameRenderer, type RenderPair } from "./renderer.js";
 
 type UiStats = SelfStats & { leaderboard: LeaderboardEntry[] };
@@ -137,7 +138,7 @@ export class GameClient {
       this.callbacks.onPhase("playing");
       this.audio.unlock();
       if (!msg.resumed) this.audio.spawn();
-      this.sendInput(this.input.state.angle, this.input.state.boost, true);
+      if (this.input.state.hasDirection) this.sendInput(this.input.state.angle, this.input.state.boost, true);
       return;
     }
 
@@ -215,10 +216,22 @@ export class GameClient {
   private frame = (now: number): void => {
     const dt = Math.min(.05, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
-    const pair = this.getRenderPair(now);
+    let pair = this.getRenderPair(now);
+    if (pair && !this.replayActive && this.input.state.hasDirection) pair = this.previewRenderPair(pair);
     this.renderer.render(pair, now, dt, this.input.state, this.replayActive);
     this.raf = requestAnimationFrame(this.frame);
   };
+
+  private previewRenderPair(pair: RenderPair): RenderPair {
+    const preview = (message: SnapshotMessage): SnapshotMessage => {
+      const index = message.snakes.findIndex(s => s.id === this.playerId);
+      if (index < 0) return message;
+      const snakes = message.snakes.slice();
+      snakes[index] = previewLocalSnake(snakes[index]!, this.input.state.angle, this.input.state.boost);
+      return { ...message, snakes };
+    };
+    return { prev: preview(pair.prev), next: preview(pair.next), t: pair.t };
+  }
 
   private getRenderPair(now: number): RenderPair | null {
     if (this.replayActive && this.replayFrames.length > 1) {

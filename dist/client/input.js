@@ -1,11 +1,14 @@
+import { CONFIG } from "../shared/config.js";
+const STEER_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD"]);
 export class InputController {
-    state = { angle: 0, boost: false, joystickAnchor: null, joystickKnob: null };
+    state = { angle: 0, boost: false, hasDirection: false, joystickAnchor: null, joystickKnob: null };
     canvas;
     emit;
     touchPointerId = null;
     mouseBoost = false;
     externalBoost = false;
     disposed = false;
+    steerKeys = new Set();
     constructor(canvas, emit) {
         this.canvas = canvas;
         this.emit = emit;
@@ -17,6 +20,7 @@ export class InputController {
     }
     dispose() {
         this.disposed = true;
+        this.steerKeys.clear();
         this.canvas.removeEventListener("contextmenu", this.onContextMenu);
         this.canvas.removeEventListener("pointermove", this.onPointerMove);
         this.canvas.removeEventListener("pointerdown", this.onPointerDown);
@@ -66,17 +70,20 @@ export class InputController {
             const dx = e.clientX - a.x;
             const dy = e.clientY - a.y;
             const distance = Math.hypot(dx, dy);
-            if (distance > 8)
-                this.state.angle = Math.atan2(dy, dx);
             const max = 52;
             const scale = distance > max ? max / Math.max(distance, 0.001) : 1;
             this.state.joystickKnob = { x: a.x + dx * scale, y: a.y + dy * scale };
-            this.emit(this.state.angle, this.state.boost, false);
+            if (distance <= 8)
+                return;
+            this.setDirection(Math.atan2(dy, dx), false);
             return;
         }
         const r = this.canvas.getBoundingClientRect();
-        this.state.angle = Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2));
-        this.emit(this.state.angle, this.state.boost, false);
+        const dx = e.clientX - (r.left + r.width / 2);
+        const dy = e.clientY - (r.top + r.height / 2);
+        if (Math.hypot(dx, dy) < CONFIG.MOUSE_STEER_DEADZONE_PX)
+            return;
+        this.setDirection(Math.atan2(dy, dx), false);
     };
     onPointerUp = (e) => {
         if (e.pointerType === "touch" && e.pointerId === this.touchPointerId) {
@@ -91,25 +98,49 @@ export class InputController {
         }
     };
     onKeyDown = (e) => {
-        if (e.code !== "Space")
+        if (e.code === "Space") {
+            e.preventDefault();
+            this.externalBoost = true;
+            this.syncBoost(true);
+            return;
+        }
+        if (!STEER_KEYS.has(e.code))
             return;
         e.preventDefault();
-        this.externalBoost = true;
-        this.syncBoost(true);
+        this.steerKeys.add(e.code);
+        this.syncKeyboardDirection();
     };
     onKeyUp = (e) => {
-        if (e.code !== "Space")
+        if (e.code === "Space") {
+            e.preventDefault();
+            this.externalBoost = false;
+            this.syncBoost(true);
+            return;
+        }
+        if (!STEER_KEYS.has(e.code))
             return;
         e.preventDefault();
-        this.externalBoost = false;
-        this.syncBoost(true);
+        this.steerKeys.delete(e.code);
+        this.syncKeyboardDirection();
     };
+    syncKeyboardDirection() {
+        const x = (this.steerKeys.has("KeyD") ? 1 : 0) - (this.steerKeys.has("KeyA") ? 1 : 0);
+        const y = (this.steerKeys.has("KeyS") ? 1 : 0) - (this.steerKeys.has("KeyW") ? 1 : 0);
+        if (x === 0 && y === 0)
+            return;
+        this.setDirection(Math.atan2(y, x), true);
+    }
+    setDirection(angle, force) {
+        this.state.angle = angle;
+        this.state.hasDirection = true;
+        this.emit(this.state.angle, this.state.boost, force);
+    }
     syncBoost(force) {
         const boost = this.mouseBoost || this.externalBoost;
         if (boost === this.state.boost && !force)
             return;
         this.state.boost = boost;
-        this.emit(this.state.angle, this.state.boost, force);
+        if (this.state.hasDirection)
+            this.emit(this.state.angle, this.state.boost, force);
     }
 }
-//# sourceMappingURL=input.js.map

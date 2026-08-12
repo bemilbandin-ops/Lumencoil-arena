@@ -38,7 +38,7 @@ export class GameRenderer {
   resize(): void {
     const r = this.canvas.getBoundingClientRect();
     const cssWidth = Math.max(1, Math.round(r.width)), cssHeight = Math.max(1, Math.round(r.height));
-    const nextDpr = Math.min(window.devicePixelRatio || 1, 2);
+    const nextDpr = Math.min(window.devicePixelRatio || 1, CONFIG.CANVAS_DPR_CAP);
     const physicalWidth = Math.max(1, Math.round(cssWidth * nextDpr)), physicalHeight = Math.max(1, Math.round(cssHeight * nextDpr));
     this.lastCssWidth = cssWidth; this.lastCssHeight = cssHeight;
     if (this.canvas.width === physicalWidth && this.canvas.height === physicalHeight && this.dpr === nextDpr) return;
@@ -46,37 +46,29 @@ export class GameRenderer {
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); this.ctx.imageSmoothingEnabled = true;
   }
 
-  handleEvent(event: WorldEvent): void {
-    this.effects.handleEvent(event, this.playerId, this.camera);
-  }
+  handleEvent(event: WorldEvent): void { this.effects.handleEvent(event, this.playerId, this.camera); }
 
   render(pair: RenderPair | null, now: number, dt: number, input: InputState, replaying: boolean): void {
     const width = this.canvas.clientWidth || this.lastCssWidth || 1, height = this.canvas.clientHeight || this.lastCssHeight || 1;
     const ctx = this.ctx;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.fillStyle = "#20242a"; ctx.fillRect(0, 0, width, height);
-
     let me: SnakeSnapshot | undefined, snakes: SnakeSnapshot[] = [];
     if (pair) {
       snakes = interpolateSnakes(pair.prev.snakes, pair.next.snakes, pair.t);
       me = snakes.find(s => s.id === this.playerId);
       if (me?.body[0]) this.updateCamera(me, dt, replaying);
     }
-
     const env: VisualEnv = { canvas: this.canvas, ctx, camera: this.camera, arenaRadius: this.arenaRadius, effects: this.effects.enabled };
     drawBackdrop(env, width, height, now, this.specks);
     if (pair) {
       const shake = this.effects.getShakeOffset();
       ctx.save(); ctx.translate(width / 2 + shake.x, height / 2 + shake.y); ctx.scale(this.camera.zoom, this.camera.zoom); ctx.translate(-this.camera.x, -this.camera.y);
       drawWorldBoundary(ctx, this.arenaRadius); drawFood(env, pair.next.foods, now);
-      for (const snake of snakes) {
-        const spawnT = this.effects.spawnTForSnake(snake.id, now);
-        if (drawSnake(env, snake, snake.id === this.playerId, now, spawnT)) this.effects.emitBoostTrail(snake);
-      }
+      for (const snake of snakes) { const spawnT = this.effects.spawnTForSnake(snake.id, now); if (drawSnake(env, snake, snake.id === this.playerId, now, spawnT)) this.effects.emitBoostTrail(snake); }
       this.effects.updateAndDraw(ctx, dt); ctx.restore();
       drawBoundaryWarning(ctx, width, height, this.arenaRadius, me?.body[0]); drawMinimap(ctx, width, height, this.arenaRadius, me?.body[0]);
     } else this.effects.update(dt);
-
     if (input.joystickAnchor) this.drawJoystick(ctx, input.joystickAnchor, input.joystickKnob ?? input.joystickAnchor);
     this.effects.drawFrameOverlays(ctx, width, height, now, dt, replaying);
   }

@@ -32,7 +32,7 @@ export class GameRenderer {
     resize() {
         const r = this.canvas.getBoundingClientRect();
         const cssWidth = Math.max(1, Math.round(r.width)), cssHeight = Math.max(1, Math.round(r.height));
-        const nextDpr = Math.min(window.devicePixelRatio || 1, 2);
+        const nextDpr = Math.min(window.devicePixelRatio || 1, CONFIG.CANVAS_DPR_CAP);
         const physicalWidth = Math.max(1, Math.round(cssWidth * nextDpr)), physicalHeight = Math.max(1, Math.round(cssHeight * nextDpr));
         this.lastCssWidth = cssWidth;
         this.lastCssHeight = cssHeight;
@@ -44,9 +44,7 @@ export class GameRenderer {
         this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
         this.ctx.imageSmoothingEnabled = true;
     }
-    handleEvent(event) {
-        this.effects.handleEvent(event, this.playerId, this.camera);
-    }
+    handleEvent(event) { this.effects.handleEvent(event, this.playerId, this.camera); }
     render(pair, now, dt, input, replaying) {
         const width = this.canvas.clientWidth || this.lastCssWidth || 1, height = this.canvas.clientHeight || this.lastCssHeight || 1;
         const ctx = this.ctx;
@@ -118,4 +116,3 @@ export class GameRenderer {
         ctx.restore();
     }
 }
-//# sourceMappingURL=renderer.js.map

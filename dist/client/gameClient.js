@@ -2,6 +2,7 @@ import { CONFIG } from "../shared/config.js";
 import { clamp } from "../shared/types.js";
 import { GameAudio } from "./audio.js";
 import { InputController } from "./input.js";
+import { previewLocalSnake } from "./inputPreview.js";
 import { GameRenderer } from "./renderer.js";
 export class GameClient {
     ws = null;
@@ -134,7 +135,8 @@ export class GameClient {
             this.audio.unlock();
             if (!msg.resumed)
                 this.audio.spawn();
-            this.sendInput(this.input.state.angle, this.input.state.boost, true);
+            if (this.input.state.hasDirection)
+                this.sendInput(this.input.state.angle, this.input.state.boost, true);
             return;
         }
         if (msg.type === "snapshot") {
@@ -212,10 +214,23 @@ export class GameClient {
     frame = (now) => {
         const dt = Math.min(.05, (now - this.lastFrame) / 1000);
         this.lastFrame = now;
-        const pair = this.getRenderPair(now);
+        let pair = this.getRenderPair(now);
+        if (pair && !this.replayActive && this.input.state.hasDirection)
+            pair = this.previewRenderPair(pair);
         this.renderer.render(pair, now, dt, this.input.state, this.replayActive);
         this.raf = requestAnimationFrame(this.frame);
     };
+    previewRenderPair(pair) {
+        const preview = (message) => {
+            const index = message.snakes.findIndex(s => s.id === this.playerId);
+            if (index < 0)
+                return message;
+            const snakes = message.snakes.slice();
+            snakes[index] = previewLocalSnake(snakes[index], this.input.state.angle, this.input.state.boost);
+            return { ...message, snakes };
+        };
+        return { prev: preview(pair.prev), next: preview(pair.next), t: pair.t };
+    }
     getRenderPair(now) {
         if (this.replayActive && this.replayFrames.length > 1) {
             const frames = this.replayFrames;
@@ -239,4 +254,3 @@ export class GameClient {
         return { prev: a.message, next: b.message, t };
     }
 }
-//# sourceMappingURL=gameClient.js.map
