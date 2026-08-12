@@ -26,6 +26,7 @@ export type Snake = BotSnake & {
   brain?: BotBrain;
   lastInputAt: number;
   lastSeq: number;
+  lastBiteAt: number;
   deathStats?: DeathStats;
 };
 
@@ -126,6 +127,7 @@ export class GameWorld {
     snake.spawnedAt = Date.now();
     snake.body = this.makeInitialBody(snake.x, snake.y, snake.angle);
     snake.lastSeq = 0;
+    snake.lastBiteAt = 0;
     snake.deathStats = undefined;
     this.emit({ type: "spawn", snakeId: snake.id, x: snake.x, y: snake.y, skin: snake.skin });
     this.ensurePopulation();
@@ -239,7 +241,7 @@ export class GameWorld {
       x: p.x, y: p.y, angle, targetAngle: angle, boost: false,
       mass, score: isBot ? Math.max(0, Math.round((mass - CONFIG.START_MASS) * 2.2)) : 0,
       kills: 0, alive: true, spawnedAt: Date.now(),
-      body: this.makeInitialBody(p.x, p.y, angle, mass), lastInputAt: 0, lastSeq: 0,
+      body: this.makeInitialBody(p.x, p.y, angle, mass), lastInputAt: 0, lastSeq: 0, lastBiteAt: 0,
       brain: isBot ? createBrain(profile) : undefined
     };
   }
@@ -258,31 +260,36 @@ export class GameWorld {
     const encounterAnchors = preferNearHuman && !humans.length
       ? [...this.snakes.values()].filter(s => s.alive)
       : humans;
-    for (let attempt = 0; attempt < 48; attempt++) {
+    const maxR = CONFIG.ARENA_RADIUS - CONFIG.SPAWN_EDGE_PADDING;
+    let best: Vec2 | null = null;
+    let bestClearance = -1;
+
+    for (let attempt = 0; attempt < 72; attempt++) {
       let p: Vec2;
-      if (encounterAnchors.length && attempt < 30) {
+      if (encounterAnchors.length && attempt < 42) {
         const anchor = choose(encounterAnchors);
         const a = rand(-Math.PI, Math.PI);
-        const d = rand(820, 1500);
+        const d = rand(CONFIG.ENCOUNTER_SPAWN_MIN_DISTANCE, CONFIG.ENCOUNTER_SPAWN_MAX_DISTANCE);
         p = { x: anchor.x + Math.cos(a) * d, y: anchor.y + Math.sin(a) * d };
         const center = Math.hypot(p.x, p.y);
-        const maxR = CONFIG.ARENA_RADIUS - CONFIG.SPAWN_EDGE_PADDING;
         if (center > maxR) {
           p.x *= maxR / center;
           p.y *= maxR / center;
         }
       } else {
         const a = rand(-Math.PI, Math.PI);
-        const r = Math.sqrt(Math.random()) * (CONFIG.ARENA_RADIUS - CONFIG.SPAWN_EDGE_PADDING);
+        const r = Math.sqrt(Math.random()) * maxR;
         p = { x: Math.cos(a) * r, y: Math.sin(a) * r };
       }
-      let safe = true;
+
+      let clearance = Infinity;
       for (const s of this.snakes.values()) {
-        if (s.alive && distanceSq(p, s) < CONFIG.SPAWN_SAFE_RADIUS * CONFIG.SPAWN_SAFE_RADIUS) { safe = false; break; }
+        if (s.alive) clearance = Math.min(clearance, Math.sqrt(distanceSq(p, s)));
       }
-      if (safe) return p;
+      if (clearance > bestClearance) { bestClearance = clearance; best = p; }
+      if (clearance >= CONFIG.SPAWN_SAFE_RADIUS) return p;
     }
-    return { x: rand(-1000, 1000), y: rand(-1000, 1000) };
+    return best ?? { x: 0, y: 0 };
   }
 
   private activePopulation(): number {
@@ -335,15 +342,17 @@ export class GameWorld {
     if (s.boost && !canBoost) s.boost = false;
     const massPenalty = clamp((s.mass - CONFIG.START_MASS) * CONFIG.MASS_SPEED_PENALTY, 0, 35);
     const speed = Math.max(92, (canBoost ? CONFIG.BOOST_SPEED : CONFIG.BASE_SPEED) - massPenalty);
-    if (canBoost) s.mass = Math.max(CONFIG.MIN_BOOST_MASS, s.mass - CONFIG.BOOST_DRAIN_PER_SECOND * dt);
+    if (canBoost) {
+      const before = this.targetSegments(s.mass);
+      s.mass = Math.max(CONFIG.MIN_BOOST_MASS, s.mass - CONFIG.BOOST_DRAIN_PER_SECOND * dt);
+      const after = this.targetSegments(s.mass);
+      for (let i = 0; i < before - after && s.body.length > 1; i++) s.body.pop();
+    }
     s.x += Math.cos(s.angle) * speed * dt;
     s.y += Math.sin(s.angle) * speed * dt;
     s.body[0]!.x = s.x;
     s.body[0]!.y = s.y;
 
-    const targetSegments = this.targetSegments(s.mass);
-    while (s.body.length < targetSegments) s.body.push({ ...s.body[s.body.length - 1]! });
-    while (s.body.length > targetSegments) s.body.pop();
     for (let i = 1; i < s.body.length; i++) {
       const prev = s.body[i - 1]!;
       const cur = s.body[i]!;
@@ -358,16 +367,20 @@ export class GameWorld {
   }
 
   private targetSegments(mass: number): number {
-    return Math.round(clamp(CONFIG.START_SEGMENTS + (mass - CONFIG.START_MASS) / 2.15, CONFIG.START_SEGMENTS, CONFIG.MAX_BODY_SEGMENTS));
+    return Math.round(clamp(
+      CONFIG.START_SEGMENTS + (mass - CONFIG.START_MASS) / CONFIG.SNAKE_SEGMENT_MASS,
+      1,
+      CONFIG.MAX_BODY_SEGMENTS
+    ));
   }
 
-  private rebuildGrids(now: number): void {
+  rebuildGrids(now: number): void {
     this.foodGrid.clear();
     for (const f of this.foods.values()) this.foodGrid.insert(f);
     this.bodyGrid.clear();
     for (const s of this.snakes.values()) {
       if (!s.alive || now - s.spawnedAt < CONFIG.SPAWN_PROTECTION_MS) continue;
-      for (let i = 2; i < s.body.length; i++) {
+      for (let i = 1; i < s.body.length; i++) {
         const p = s.body[i]!;
         this.bodyGrid.insert({ x: p.x, y: p.y, snakeId: s.id, segmentIndex: i });
       }
@@ -384,7 +397,12 @@ export class GameWorld {
         const r = CONFIG.FOOD_PICKUP_RADIUS + f.value * 1.45;
         if (distanceSq(s, f) > r * r) continue;
         eaten.add(f.id);
+        const before = this.targetSegments(s.mass);
         s.mass += f.value * CONFIG.GROWTH_MASS_PER_FOOD_VALUE;
+        const after = this.targetSegments(s.mass);
+        for (let i = 0; i < after - before && s.body.length < CONFIG.MAX_BODY_SEGMENTS; i++) {
+          s.body.push({ ...s.body[s.body.length - 1]! });
+        }
         s.score += f.value * CONFIG.SCORE_FOOD_MULTIPLIER;
         this.emit({ type: "collect", eaterId: s.id, x: f.x, y: f.y, value: f.value, kind: f.kind });
       }
@@ -392,43 +410,82 @@ export class GameWorld {
     for (const id of eaten) this.foods.delete(id);
   }
 
-  private resolveCollisions(now: number): void {
+  resolveCollisions(now: number): void {
     const dead = new Map<string, string | null>();
     const alive = [...this.snakes.values()].filter(s => s.alive);
+
     for (let i = 0; i < alive.length; i++) {
       const a = alive[i]!;
       if (dead.has(a.id)) continue;
       const protectedA = now - a.spawnedAt < CONFIG.SPAWN_PROTECTION_MS;
-      if (!protectedA && Math.hypot(a.x, a.y) > CONFIG.ARENA_RADIUS - CONFIG.HEAD_RADIUS * 1.45) { dead.set(a.id, null); continue; }
+      if (!protectedA && Math.hypot(a.x, a.y) > CONFIG.ARENA_RADIUS - CONFIG.HEAD_RADIUS * 1.45) {
+        dead.set(a.id, null);
+        continue;
+      }
       for (let j = i + 1; j < alive.length; j++) {
         const b = alive[j]!;
         if (dead.has(b.id) || protectedA || now - b.spawnedAt < CONFIG.SPAWN_PROTECTION_MS) continue;
         const r = CONFIG.HEAD_RADIUS * 1.82;
         if (distanceSq(a, b) > r * r) continue;
         const outcome = resolveHeadContact(a.mass, b.mass);
-        if (outcome === "attacker") dead.set(b.id, a.id);
-        else if (outcome === "defender") dead.set(a.id, b.id);
-        else {
-          dead.set(a.id, null);
-          dead.set(b.id, null);
+        if (outcome === "attacker") {
+          const bodyDistance2 = this.nearestBodyDistanceSq(a, b.id);
+          if (bodyDistance2 === null || bodyDistance2 >= distanceSq(a, b)) dead.set(b.id, a.id);
+        } else if (outcome === "defender") {
+          const bodyDistance2 = this.nearestBodyDistanceSq(b, a.id);
+          if (bodyDistance2 === null || bodyDistance2 >= distanceSq(a, b)) dead.set(a.id, b.id);
         }
       }
     }
+
+    const bittenVictims = new Set<string>();
     for (const s of alive) {
       if (dead.has(s.id) || now - s.spawnedAt < CONFIG.SPAWN_PROTECTION_MS) continue;
+      if (now - s.lastBiteAt < CONFIG.SNAKE_BITE_INTERVAL_MS) continue;
       const nearby = this.bodyGrid.query(s.x, s.y, CONFIG.HEAD_RADIUS + CONFIG.BODY_RADIUS + 10);
+      const r = CONFIG.HEAD_RADIUS + CONFIG.BODY_RADIUS * .75;
+      const r2 = r * r;
+      let bite: { owner: Snake; segmentIndex: number; distance2: number } | null = null;
+
       for (const p of nearby) {
-        if (p.snakeId === s.id) continue;
-        const r = CONFIG.HEAD_RADIUS + CONFIG.BODY_RADIUS * .75;
-        if (distanceSq(s, p) > r * r) continue;
+        if (p.snakeId === s.id || p.segmentIndex <= 0) continue;
+        const d2 = distanceSq(s, p);
+        if (d2 > r2) continue;
         const owner = this.snakes.get(p.snakeId);
-        if (!owner?.alive || dead.has(owner.id)) continue;
-        if (resolveBodyContact(s.mass, owner.mass) === "attacker") dead.set(owner.id, s.id);
-        else dead.set(s.id, owner.id);
-        break;
+        if (!owner?.alive || dead.has(owner.id) || bittenVictims.has(owner.id)) continue;
+        if (p.segmentIndex >= owner.body.length) continue;
+        if (resolveBodyContact(s.mass, owner.mass) !== "attacker") continue;
+        if (!bite || d2 < bite.distance2 || (d2 === bite.distance2 && p.segmentIndex < bite.segmentIndex)) {
+          bite = { owner, segmentIndex: p.segmentIndex, distance2: d2 };
+        }
+      }
+
+      if (!bite) continue;
+      const severed = bite.owner.body.splice(bite.segmentIndex);
+      if (!severed.length) continue;
+      s.lastBiteAt = now;
+      bittenVictims.add(bite.owner.id);
+      bite.owner.mass = Math.max(0, bite.owner.mass - severed.length * CONFIG.SNAKE_SEGMENT_MASS);
+      this.makeFoodRoom(severed.length);
+      for (const piece of severed) {
+        this.spawnFood(piece.x, piece.y, CONFIG.SNAKE_SEGMENT_DROP_VALUE, 2);
       }
     }
+
     for (const [id, killerId] of dead) this.killSnake(id, killerId);
+  }
+
+  private nearestBodyDistanceSq(attacker: Snake, victimId: string): number | null {
+    const nearby = this.bodyGrid.query(attacker.x, attacker.y, CONFIG.HEAD_RADIUS + CONFIG.BODY_RADIUS + 10);
+    const r = CONFIG.HEAD_RADIUS + CONFIG.BODY_RADIUS * .75;
+    const r2 = r * r;
+    let nearest: number | null = null;
+    for (const p of nearby) {
+      if (p.snakeId !== victimId || p.segmentIndex <= 0) continue;
+      const d2 = distanceSq(attacker, p);
+      if (d2 <= r2 && (nearest === null || d2 < nearest)) nearest = d2;
+    }
+    return nearest;
   }
 
   private killSnake(id: string, killerId: string | null): void {
@@ -455,15 +512,22 @@ export class GameWorld {
   }
 
   private dropDeathFood(s: Snake): void {
-    let remaining = Math.max(12, s.mass * CONFIG.DEAD_FOOD_KEEP_RATIO);
-    const points = s.body.length;
-    let cursor = 0;
-    while (remaining > .5 && cursor < points * 2 && this.foods.size < CONFIG.FOOD_MAX) {
-      const p = s.body[Math.min(points - 1, Math.floor(cursor / 2))]!;
-      const value = Math.min(remaining, Math.random() < .14 ? 4 : Math.random() < .34 ? 3 : 2);
-      this.spawnFood(p.x + rand(-20, 20), p.y + rand(-20, 20), Math.max(1, Math.round(value)), 2);
-      remaining -= value;
-      cursor++;
+    this.makeFoodRoom(s.body.length);
+    for (let i = 0; i < s.body.length; i++) {
+      const p = s.body[i]!;
+      this.spawnFood(p.x, p.y, i === 0 ? CONFIG.SNAKE_HEAD_DROP_VALUE : CONFIG.SNAKE_SEGMENT_DROP_VALUE, 2);
+    }
+  }
+
+  private makeFoodRoom(count: number): void {
+    const excess = Math.max(0, this.foods.size + count - CONFIG.FOOD_MAX);
+    if (!excess) return;
+    const removable = [...this.foods.values()].filter(f => f.kind !== 2).sort((a, b) => a.bornAt - b.bornAt);
+    for (let i = 0; i < excess && i < removable.length; i++) this.foods.delete(removable[i]!.id);
+    if (this.foods.size + count > CONFIG.FOOD_MAX) {
+      const oldest = [...this.foods.values()].sort((a, b) => a.bornAt - b.bornAt);
+      let i = 0;
+      while (this.foods.size + count > CONFIG.FOOD_MAX && i < oldest.length) this.foods.delete(oldest[i++]!.id);
     }
   }
 
@@ -486,7 +550,7 @@ export class GameWorld {
     this.spawnFood(Math.cos(a) * r, Math.sin(a) * r, rare ? choose([3, 4, 4, 5]) : choose([1, 1, 1, 1, 2, 2]), rare ? 1 : 0);
   }
 
-  private spawnFood(x: number, y: number, value: number, kind: number): void {
+  spawnFood(x: number, y: number, value: number, kind: number): void {
     const f: Food = { id: this.nextFoodId++, x, y, value, kind, bornAt: Date.now() };
     this.foods.set(f.id, f);
   }

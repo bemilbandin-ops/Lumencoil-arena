@@ -49,7 +49,16 @@ export function decideBot(self: BotSnake, brain: BotBrain, bodies: BotBody[], fo
     const dx = other.x - self.x;
     const dy = other.y - self.y;
     const d = Math.hypot(dx, dy);
-    if (d > CONFIG.BOT_HEAD_DANGER_DISTANCE * safetyScale || d < .001) continue;
+    if (d < .001) continue;
+
+    if (d < CONFIG.BOT_CLUSTER_RADIUS) {
+      const spread = (1 - d / CONFIG.BOT_CLUSTER_RADIUS) * CONFIG.BOT_CLUSTER_STRENGTH;
+      avoidX -= dx / d * spread;
+      avoidY -= dy / d * spread;
+      danger += spread * .55;
+    }
+
+    if (d > CONFIG.BOT_HEAD_DANGER_DISTANCE * safetyScale) continue;
     const otherLevel = combatLevel(other.mass);
     const huntingLowerLevel = selfLevel > otherLevel && brain.aggression > .42 && brain.profile !== "PASSIVE";
     if (huntingLowerLevel) continue;

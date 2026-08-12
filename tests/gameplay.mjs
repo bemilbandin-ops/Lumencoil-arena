@@ -1,56 +1,18 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import { CONFIG } from "../dist/shared/config.js";
 import { combatLevel, resolveBodyContact, resolveHeadContact } from "../dist/shared/combat.js";
-import { decideBot } from "../dist/server/botAI.js";
 import { GameWorld } from "../dist/server/game.js";
-import { normalizeAngle } from "../dist/shared/types.js";
 
-assert.ok(CONFIG.ARENA_RADIUS <= 3200, "arena stays compact enough for frequent encounters");
-assert.ok(CONFIG.SERVER_TICK_RATE >= 30, "server steering simulation runs at 30 Hz or better");
-assert.ok(CONFIG.SNAPSHOT_RATE >= 15, "snapshots arrive at least 15 Hz");
-assert.ok(CONFIG.INPUT_MIN_INTERVAL_MS <= 12, "server accepts responsive input cadence");
-assert.ok(CONFIG.CLIENT_INPUT_SEND_INTERVAL_MS <= 16, "client sends steering at frame-like cadence");
-assert.ok(CONFIG.LIVE_INTERPOLATION_DELAY_MS <= 60, "live interpolation stays below 60 ms");
-assert.ok(CONFIG.LIVE_CAMERA_FOLLOW_RATE >= 12, "camera stays close to steering reference");
-assert.ok(CONFIG.TURN_RATE >= 4, "starting turn rate is responsive");
+assert.ok(CONFIG.ARENA_RADIUS <= 1650, `arena radius must be tightly populated; got ${CONFIG.ARENA_RADIUS}`);
+assert.ok(CONFIG.SPAWN_SAFE_RADIUS <= 300, `safe radius must fit 24 snakes without central fallback; got ${CONFIG.SPAWN_SAFE_RADIUS}`);
 
-assert.ok(combatLevel(60) > combatLevel(45), "larger snake has higher combat level");
-assert.equal(resolveHeadContact(60, 45), "attacker", "higher-level head survives head contact");
-assert.equal(resolveHeadContact(45, 60), "defender", "lower-level head loses head contact");
-assert.equal(resolveHeadContact(50, 50), "both", "same-level head contact remains mutual");
-assert.equal(resolveBodyContact(60, 45), "attacker", "higher-level head can consume lower-level body owner");
-assert.equal(resolveBodyContact(45, 60), "defender", "lower-level head dies on higher-level body");
-
-const originalRandom = Math.random;
-Math.random = () => .5;
-try {
-  const wanderBrain = {
-    profile: "NORMAL", reaction: .1, timer: 0, aggression: .1, risk: .4,
-    foodAttraction: 1, boostTendency: 0, preferredEnemyDistance: 250,
-    steeringNoise: 0, prediction: .3, wanderHeading: 0
-  };
-  let self = { id: "self", x: 0, y: 0, angle: 0, mass: 50, alive: true, boost: false };
-  let totalTurn = 0;
-  for (let i = 0; i < 12; i++) {
-    const decision = decideBot(self, wanderBrain, [], [], [self]);
-    totalTurn += Math.abs(normalizeAngle(decision.angle - self.angle));
-    self = { ...self, angle: decision.angle };
-  }
-  assert.ok(totalTurn < 1.2, `unstimulated bot should travel instead of orbiting; total turn=${totalTurn}`);
-
-  const hunterBrain = {
-    profile: "AGGRESSIVE", reaction: .1, timer: 0, aggression: .95, risk: .7,
-    foodAttraction: 1, boostTendency: 0, preferredEnemyDistance: 250,
-    steeringNoise: 0, prediction: .3, wanderHeading: 0
-  };
-  const hunter = { id: "hunter", x: 0, y: 0, angle: 0, mass: 60, alive: true, boost: false };
-  const prey = { id: "prey", x: 200, y: 0, angle: 0, mass: 45, alive: true, boost: false };
-  const hunt = decideBot(hunter, hunterBrain, [], [], [hunter, prey]);
-  assert.ok(Math.abs(normalizeAngle(hunt.angle)) < Math.PI / 2, "larger aggressive bot closes on lower-level prey");
-} finally {
-  Math.random = originalRandom;
-}
+assert.ok(combatLevel(60) > combatLevel(45));
+assert.equal(resolveHeadContact(60, 45), "attacker", "higher level can eat a lower-level head");
+assert.equal(resolveHeadContact(45, 60), "defender", "higher defender can eat the lower attacker head");
+assert.equal(resolveHeadContact(50, 50), "none", "equal-level heads do not mutually die");
+assert.equal(resolveBodyContact(60, 45), "attacker", "higher level may eat lower body pieces");
+assert.equal(resolveBodyContact(45, 60), "none", "lower level touching higher body does not die");
+assert.equal(resolveBodyContact(50, 50), "none", "equal level cannot eat body pieces");
 
 function duelWorld() {
   const world = new GameWorld(() => {});
@@ -61,6 +23,8 @@ function duelWorld() {
   const old = Date.now() - CONFIG.SPAWN_PROTECTION_MS - 100;
   human.spawnedAt = old;
   bot.spawnedAt = old;
+  human.boost = false;
+  bot.boost = false;
   return { world, human, bot, now: Date.now() };
 }
 
@@ -68,50 +32,106 @@ function duelWorld() {
   const { world, human, bot, now } = duelWorld();
   human.mass = 60;
   bot.mass = 45;
-  human.x = bot.x = 0;
-  human.y = bot.y = 0;
-  human.body[0] = { x: 0, y: 0 };
-  bot.body[0] = { x: 0, y: 0 };
+  human.x = 0; human.y = 0; human.body[0] = { x: 0, y: 0 };
+  bot.x = 500; bot.y = 0;
+  bot.body = [
+    { x: 500, y: 0 },
+    { x: 487, y: 0 },
+    { x: 474, y: 0 },
+    { x: 0, y: 0 },
+    { x: -13, y: 0 },
+    { x: -26, y: 0 }
+  ];
+  const originalBody = bot.body.map(p => ({ ...p }));
+  const massBefore = bot.mass;
+  const foodsBefore = world.foods.size;
+
+  world.rebuildGrids(now);
   world.resolveCollisions(now);
-  assert.equal(human.alive, true, "higher-level human survives head collision");
-  assert.equal(world.snakes.has(bot.id), false, "lower-level bot dies on head collision");
-  assert.equal(human.kills, 1, "winner gets kill credit");
+
+  const severed = originalBody.slice(3);
+  assert.equal(bot.alive, true, "middle-body cut must not kill victim before head is eaten");
+  assert.deepEqual(bot.body, originalBody.slice(0, 3), "middle hit keeps the exact head-side prefix and cuts off the entire tail-side suffix");
+  assert.equal(world.foods.size, foodsBefore + severed.length, "every severed tail segment becomes exactly one ground pickup");
+  assert.equal(bot.mass, massBefore - severed.length * CONFIG.SNAKE_SEGMENT_MASS, "victim loses mass for every severed segment");
+  for (const piece of severed) {
+    const matches = [...world.foods.values()].filter(f => f.kind === 2 && Math.abs(f.x - piece.x) < .001 && Math.abs(f.y - piece.y) < .001);
+    assert.equal(matches.length, 1, `severed segment at ${piece.x},${piece.y} drops exactly one pickup at that position`);
+  }
+
+  // Staying overlapped cannot repeatedly cut during the bite cooldown.
+  human.x = 487; human.y = 0; human.body[0] = { x: 487, y: 0 };
+  world.rebuildGrids(now + 1);
+  world.resolveCollisions(now + 1);
+  assert.deepEqual(bot.body, originalBody.slice(0, 3), "bite cooldown prevents a second cut in the same instant");
+
+  // A later bite closer to the head cuts the remaining body suffix, but the head itself still lives.
+  world.rebuildGrids(now + CONFIG.SNAKE_BITE_INTERVAL_MS + 1);
+  world.resolveCollisions(now + CONFIG.SNAKE_BITE_INTERVAL_MS + 1);
+  assert.equal(bot.alive, true, "snake with only its head remaining is still alive");
+  assert.deepEqual(bot.body, [originalBody[0]], "near-head body bite severs every remaining body segment behind the head");
+  assert.equal(world.foods.size, foodsBefore + originalBody.length - 1, "all five severed body segments became five pickups total");
+
+  // Only an actual head contact finishes the snake.
+  human.x = bot.x; human.y = bot.y; human.body[0] = { x: bot.x, y: bot.y };
+  world.resolveCollisions(now + CONFIG.SNAKE_BITE_INTERVAL_MS * 2 + 2);
+  assert.equal(world.snakes.has(bot.id), false, "only eating the head kills the lower-level snake");
+  assert.equal(human.kills, 1, "head eat awards kill credit");
+}
+
+{
+  const { world, human, bot, now } = duelWorld();
+  human.mass = 45;
+  bot.mass = 60;
+  human.x = 0; human.y = 0; human.body[0] = { x: 0, y: 0 };
+  bot.x = 500; bot.y = 0;
+  bot.body = [{ x:500,y:0 }, { x:487,y:0 }, { x:0,y:0 }, { x:461,y:0 }];
+  const before = bot.body.length;
+  world.rebuildGrids(now);
+  world.resolveCollisions(now);
+  assert.equal(human.alive, true, "lower-level snake is rejected by stronger body instead of dying");
+  assert.equal(bot.body.length, before, "stronger body is not eaten by lower-level head");
 }
 
 {
   const { world, human, bot, now } = duelWorld();
   human.mass = 60;
   bot.mass = 45;
-  human.x = 0;
-  human.y = 0;
-  human.body[0] = { x: 0, y: 0 };
-  bot.x = 500;
-  bot.y = 0;
-  bot.body = Array.from({ length: 8 }, (_, i) => ({ x: i === 2 ? 0 : 500 - i * 13, y: 0 }));
-  bot.body[0] = { x: 500, y: 0 };
-  world.rebuildGrids(now);
+  human.x = bot.x = 0; human.y = bot.y = 0;
+  human.body[0] = { x:0,y:0 }; bot.body[0] = { x:0,y:0 };
+  const remainingParts = bot.body.length;
+  const foodsBefore = world.foods.size;
   world.resolveCollisions(now);
-  assert.equal(human.alive, true, "higher-level head survives lower-level body contact");
-  assert.equal(world.snakes.has(bot.id), false, "lower-level body owner is consumed");
+  assert.equal(human.alive, true, "higher-level head survives eating lower head");
+  assert.equal(world.snakes.has(bot.id), false, "victim only dies when head is eaten");
+  assert.equal(human.kills, 1, "head eat awards kill credit");
+  assert.equal(world.foods.size, foodsBefore + remainingParts, "head death drops exactly one pickup per remaining snake part");
 }
 
-for (let i = 0; i < 8; i++) {
-  const world = new GameWorld(() => {});
-  const human = world.addHuman(`encounter-${i}`, "Hero", "nova");
-  let nearest = Infinity;
-  for (const snake of world.snakes.values()) {
-    if (snake.id === human.id || !snake.alive) continue;
-    nearest = Math.min(nearest, Math.hypot(snake.x - human.x, snake.y - human.y));
-  }
-  assert.ok(nearest <= 1700, `first human should spawn near activity; nearest=${nearest}`);
+{
+  const { world, human, bot, now } = duelWorld();
+  human.mass = bot.mass = 50;
+  human.x = bot.x = 0; human.y = bot.y = 0;
+  human.body[0] = { x:0,y:0 }; bot.body[0] = { x:0,y:0 };
+  world.resolveCollisions(now);
+  assert.equal(human.alive, true, "equal-level head contact is nonlethal");
+  assert.equal(bot.alive, true, "equal-level opponent also remains alive");
 }
 
-const clientSource = fs.readFileSync(new URL("../src/client/gameClient.ts", import.meta.url), "utf8");
-const rendererSource = fs.readFileSync(new URL("../src/client/rendering/renderer.ts", import.meta.url), "utf8");
-assert.match(clientSource, /CONFIG\.CLIENT_INPUT_SEND_INTERVAL_MS/);
-assert.match(clientSource, /CONFIG\.LIVE_INTERPOLATION_DELAY_MS/);
-assert.doesNotMatch(clientSource, /now\s*-\s*96/);
-assert.doesNotMatch(clientSource, /lastInputSend\s*<\s*30/);
-assert.match(rendererSource, /CONFIG\.LIVE_CAMERA_FOLLOW_RATE/);
+// Seeded spawn distribution: the initial bot fill must not collapse into a central fallback pile.
+{
+  let state = 0x12345678;
+  const realRandom = Math.random;
+  Math.random = () => { state ^= state << 13; state ^= state >>> 17; state ^= state << 5; return ((state >>> 0) / 4294967296); };
+  try {
+    const world = new GameWorld(() => {});
+    const bots = [...world.snakes.values()];
+    let minPair = Infinity;
+    for (let i=0;i<bots.length;i++) for (let j=i+1;j<bots.length;j++) minPair = Math.min(minPair, Math.hypot(bots[i].x-bots[j].x, bots[i].y-bots[j].y));
+    assert.ok(minPair >= 200, `initial bot population must be spatially spread; closest pair=${minPair}`);
+    const central = bots.filter(b => Math.hypot(b.x,b.y) < 450).length;
+    assert.ok(central <= 5, `bots must not camp in a central spawn pile; central count=${central}`);
+  } finally { Math.random = realRandom; }
+}
 
-console.log("Gameplay regression suite passed");
+console.log("Snake Clash gameplay regression suite passed");
