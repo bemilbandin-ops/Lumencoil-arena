@@ -115,43 +115,116 @@ class App extends React.Component<{}, State> {
 
   private renderMenu(): any {
     const h = React.createElement;
-    return h("main", { className: "menu-shell" },
-      h("div", { className: "menu-glow glow-a" }),
-      h("div", { className: "menu-glow glow-b" }),
-      h("section", { className: "menu-card" },
-        h("div", { className: "brand" }, h("div", { className: "brand-mark" }, h("i"), h("i"), h("i")), h("h1", null, "LUMENCOIL")),
-        h("p", { className: "tagline" }, "Eat. Level up. Beat the boss."),
-        h("label", { className: "field-label" }, "NICKNAME",
-          h("input", {
-            value: this.state.nickname, maxLength: 18, autoComplete: "off", spellCheck: false,
-            onChange: (e: any) => this.setState({ nickname: e.target.value }),
-            onKeyDown: (e: KeyboardEvent) => { if (e.key === "Enter") this.play(); }
-          })
+    const selected = SKINS.find(s => s.id === this.state.skin) || SKINS[0]!;
+    const stageStyle = {
+      "--coil-body": selected.body,
+      "--coil-accent": selected.accent,
+      "--coil-secondary": selected.secondary,
+      "--coil-glow": selected.glow
+    } as any;
+    const foodColors = ["#ffe25e", "#7ee89a", "#ff796e", "#79c8ff", "#f49cff", "#ffb85e"];
+    const food = Array.from({ length: 14 }, (_, index) => h("i", {
+      key: `food-${index}`,
+      className: `launch-food launch-food-${index + 1}`,
+      style: { "--food": foodColors[index % foodColors.length] } as any
+    }));
+    const segments = Array.from({ length: 12 }, (_, index) => h("i", { key: `segment-${index}`, className: "preview-segment" }));
+
+    return h("main", { className: "launch-screen", style: stageStyle },
+      h("div", { className: "launch-grit", "aria-hidden": true }),
+      h("div", { className: "launch-food-field", "aria-hidden": true }, ...food),
+      h("header", { className: "launch-header" },
+        h("div", { className: "launch-brand" },
+          h("strong", null, "LUMENCOIL"),
+          h("span", null, "ARENA")
         ),
-        h("div", { className: "skin-label" }, "COIL SKIN"),
-        h("div", { className: "skins" }, ...SKINS.map(s => h("button", {
-          key: s.id,
-          className: `skin ${this.state.skin === s.id ? "selected" : ""}`,
-          title: s.name,
-          "aria-label": s.name,
-          onClick: () => this.setState({ skin: s.id })
-        }, h("span", { style: { background: `linear-gradient(135deg, ${s.body}, ${s.secondary})`, boxShadow: `0 0 18px ${s.glow}` } })) )),
-        h("button", { className: "play", onClick: this.play }, h("span", null, "PLAY"), h("small", null, "START 90-SECOND RUN")),
-        h("div", { className: "menu-meta" },
-          h("div", { className: "best" }, h("span", null, "BEST LEVEL"), h("strong", null, this.state.best.toLocaleString())),
-          h("div", { className: "toggles" },
-            toggleButton(h, "SOUND", this.state.sound, () => this.setSound(!this.state.sound)),
-            toggleButton(h, "FX", this.state.effects, () => this.setEffects(!this.state.effects))
-          )
+        h("div", { className: "launch-rules", "aria-label": "Match format" },
+          h("span", null, h("b", null, "75"), " SEC GROW"),
+          h("i"),
+          h("span", null, h("b", null, "15"), " SEC BOSS")
         ),
-        h("div", { className: "controls" },
-          h("span", null, h("b", null, "STEER"), "Mouse or drag"),
-          h("span", null, h("b", null, "BOOST"), "Click, Space, or button")
+        h("div", { className: "launch-record" },
+          h("span", null, "BEST LEVEL"),
+          h("strong", null, this.state.best.toLocaleString())
         )
       ),
-      h("div", { className: "menu-orbit orbit-a" }),
-      h("div", { className: "menu-orbit orbit-b" }),
-      h("div", { className: "menu-orbit orbit-c" })
+      h("section", { className: "launch-core" },
+        h("div", { className: "launch-copy" },
+          h("div", { className: "launch-mode" }, "90 SECOND SURVIVAL RUN"),
+          h("h1", { className: "launch-title" }, "GROW FAST.", h("br"), "KILL THE BOSS."),
+          h("p", { className: "launch-subtitle" }, "Eat everything. Cut weaker coils. Reach the boss before the clock hits zero."),
+          h("div", { className: "launch-entry" },
+            h("label", { className: "callsign-field" },
+              h("span", null, "CALLSIGN"),
+              h("input", {
+                value: this.state.nickname,
+                maxLength: 18,
+                autoComplete: "off",
+                spellCheck: false,
+                "aria-label": "Callsign",
+                onChange: (e: any) => this.setState({ nickname: e.target.value }),
+                onKeyDown: (e: KeyboardEvent) => { if (e.key === "Enter") this.play(); }
+              })
+            ),
+            h("button", { className: "arena-enter", onClick: this.play },
+              h("span", null, "DROP IN"),
+              h("small", null, "START RUN")
+            )
+          ),
+          h("div", { className: "launch-controls" },
+            h("span", null, h("b", null, "STEER"), "MOUSE / DRAG"),
+            h("span", null, h("b", null, "BOOST"), "CLICK / SPACE")
+          )
+        ),
+        h("div", { className: "coil-stage", "aria-label": `${selected.name} coil preview` },
+          h("div", { className: "arena-ring" },
+            h("div", { className: "preview-coil", "aria-hidden": true },
+              ...segments,
+              h("div", { className: "preview-head" },
+                h("i", { className: "preview-eye eye-top" }),
+                h("i", { className: "preview-eye eye-bottom" }),
+                h("i", { className: "preview-snout" })
+              )
+            ),
+            h("div", { className: "stage-pickups", "aria-hidden": true },
+              h("i"), h("i"), h("i"), h("i"), h("i"), h("i")
+            )
+          ),
+          h("div", { className: "stage-caption" },
+            h("div", null, h("span", null, "SELECTED COIL"), h("strong", null, selected.name.toUpperCase())),
+            h("div", { className: "stage-level" }, h("span", null, "SPAWN"), h("strong", null, "LV 1"))
+          )
+        )
+      ),
+      h("footer", { className: "launch-loadout" },
+        h("div", { className: "loadout-heading" },
+          h("span", null, "CHOOSE COIL"),
+          h("small", null, "COLOR CHANGES INSTANTLY")
+        ),
+        h("div", { className: "loadout-skins" }, ...SKINS.map(s => h("button", {
+          key: s.id,
+          className: `loadout-skin ${this.state.skin === s.id ? "selected" : ""}`,
+          title: s.name,
+          "aria-label": `Use ${s.name} skin`,
+          "aria-pressed": this.state.skin === s.id,
+          onClick: () => this.setState({ skin: s.id })
+        },
+          h("i", { style: { background: s.body, boxShadow: `inset -5px -5px 0 ${s.secondary}` } }),
+          h("span", null, s.name)
+        ))),
+        h("div", { className: "launch-settings" },
+          h("button", {
+            className: `launch-setting ${this.state.sound ? "on" : ""}`,
+            onClick: () => this.setSound(!this.state.sound),
+            "aria-pressed": this.state.sound
+          }, h("span", null, "SOUND"), h("b", null, this.state.sound ? "ON" : "OFF")),
+          h("button", {
+            className: `launch-setting ${this.state.effects ? "on" : ""}`,
+            onClick: () => this.setEffects(!this.state.effects),
+            "aria-pressed": this.state.effects
+          }, h("span", null, "FX"), h("b", null, this.state.effects ? "ON" : "OFF"))
+        )
+      )
     );
   }
 
@@ -197,8 +270,5 @@ function randomName(): string {
 function freshMatch(): MatchSnapshot { return { phase: "GROWTH", remainingMs: 90_000, result: null, bossId: null, bossLevel: null }; }
 function formatMilliseconds(milliseconds: number): string { const total = Math.max(0, Math.ceil(milliseconds / 1000)), m = Math.floor(total / 60), s = total % 60; return `${m}:${String(s).padStart(2, "0")}`; }
 function deathStat(h: any, label: string, value: string): any { return h("div", null, h("span", null, label), h("strong", null, value)); }
-function toggleButton(h: any, label: string, enabled: boolean, click: () => void): any {
-  return h("button", { className: `toggle ${enabled ? "on" : ""}`, onClick: click, "aria-pressed": enabled }, h("span", null, label), h("i"));
-}
 
 ReactDOM.render(React.createElement(App), document.getElementById("root"));
