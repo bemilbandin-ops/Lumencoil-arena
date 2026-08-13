@@ -116,114 +116,88 @@ class App extends React.Component<{}, State> {
   private renderMenu(): any {
     const h = React.createElement;
     const selected = SKINS.find(s => s.id === this.state.skin) || SKINS[0]!;
-    const stageStyle = {
-      "--coil-body": selected.body,
-      "--coil-accent": selected.accent,
-      "--coil-secondary": selected.secondary,
-      "--coil-glow": selected.glow
+    const menuStyle = {
+      "--menu-accent": selected.body,
+      "--menu-secondary": selected.secondary,
+      "--menu-glow": selected.glow
     } as any;
-    const foodColors = ["#ffe25e", "#7ee89a", "#ff796e", "#79c8ff", "#f49cff", "#ffb85e"];
-    const food = Array.from({ length: 14 }, (_, index) => h("i", {
-      key: `food-${index}`,
-      className: `launch-food launch-food-${index + 1}`,
-      style: { "--food": foodColors[index % foodColors.length] } as any
-    }));
-    const segments = Array.from({ length: 12 }, (_, index) => h("i", { key: `segment-${index}`, className: "preview-segment" }));
 
-    return h("main", { className: "launch-screen", style: stageStyle },
-      h("div", { className: "launch-grit", "aria-hidden": true }),
-      h("div", { className: "launch-food-field", "aria-hidden": true }, ...food),
-      h("header", { className: "launch-header" },
-        h("div", { className: "launch-brand" },
-          h("strong", null, "LUMENCOIL"),
-          h("span", null, "ARENA")
-        ),
-        h("div", { className: "launch-rules", "aria-label": "Match format" },
-          h("span", null, h("b", null, "75"), " SEC GROW"),
-          h("i"),
-          h("span", null, h("b", null, "15"), " SEC BOSS")
-        ),
-        h("div", { className: "launch-record" },
-          h("span", null, "BEST LEVEL"),
-          h("strong", null, this.state.best.toLocaleString())
-        )
+    return h("main", { className: "main-menu", style: menuStyle },
+      h("div", { className: "main-menu-bg", "aria-hidden": true },
+        h("i", { className: "arena-line arena-line-a" }),
+        h("i", { className: "arena-line arena-line-b" }),
+        h("i", { className: "arena-line arena-line-c" }),
+        h("i", { className: "menu-food food-a" }),
+        h("i", { className: "menu-food food-b" }),
+        h("i", { className: "menu-food food-c" }),
+        h("i", { className: "menu-food food-d" }),
+        h("i", { className: "menu-food food-e" })
       ),
-      h("section", { className: "launch-core" },
-        h("div", { className: "launch-copy" },
-          h("div", { className: "launch-mode" }, "90 SECOND SURVIVAL RUN"),
-          h("h1", { className: "launch-title" }, "GROW FAST.", h("br"), "KILL THE BOSS."),
-          h("p", { className: "launch-subtitle" }, "Eat everything. Cut weaker coils. Reach the boss before the clock hits zero."),
-          h("div", { className: "launch-entry" },
-            h("label", { className: "callsign-field" },
-              h("span", null, "CALLSIGN"),
-              h("input", {
-                value: this.state.nickname,
-                maxLength: 18,
-                autoComplete: "off",
-                spellCheck: false,
-                "aria-label": "Callsign",
-                onChange: (e: any) => this.setState({ nickname: e.target.value }),
-                onKeyDown: (e: KeyboardEvent) => { if (e.key === "Enter") this.play(); }
-              })
-            ),
-            h("button", { className: "arena-enter", onClick: this.play },
-              h("span", null, "DROP IN"),
-              h("small", null, "START RUN")
-            )
-          ),
-          h("div", { className: "launch-controls" },
-            h("span", null, h("b", null, "STEER"), "MOUSE / DRAG"),
-            h("span", null, h("b", null, "BOOST"), "CLICK / SPACE")
+      h("section", { className: "main-menu-content" },
+        h("header", { className: "menu-title" },
+          h("h1", null, "LUMENCOIL"),
+          h("div", { className: "menu-title-row" },
+            h("span", null, "ARENA"),
+            h("i"),
+            h("span", null, "90 SECOND RUN")
           )
         ),
-        h("div", { className: "coil-stage", "aria-label": `${selected.name} coil preview` },
-          h("div", { className: "arena-ring" },
-            h("div", { className: "preview-coil", "aria-hidden": true },
-              ...segments,
-              h("div", { className: "preview-head" },
-                h("i", { className: "preview-eye eye-top" }),
-                h("i", { className: "preview-eye eye-bottom" }),
-                h("i", { className: "preview-snout" })
-              )
-            ),
-            h("div", { className: "stage-pickups", "aria-hidden": true },
-              h("i"), h("i"), h("i"), h("i"), h("i"), h("i")
-            )
+        h("div", { className: "menu-form" },
+          h("label", { className: "menu-field" },
+            h("span", null, "NAME"),
+            h("input", {
+              value: this.state.nickname,
+              maxLength: 18,
+              autoComplete: "off",
+              spellCheck: false,
+              "aria-label": "Player name",
+              onChange: (e: any) => this.setState({ nickname: e.target.value }),
+              onKeyDown: (e: KeyboardEvent) => { if (e.key === "Enter") this.play(); }
+            })
           ),
-          h("div", { className: "stage-caption" },
-            h("div", null, h("span", null, "SELECTED COIL"), h("strong", null, selected.name.toUpperCase())),
-            h("div", { className: "stage-level" }, h("span", null, "SPAWN"), h("strong", null, "LV 1"))
+          h("div", { className: "menu-section-label" },
+            h("span", null, "SKIN"),
+            h("strong", null, selected.name)
+          ),
+          h("div", { className: "menu-skins" }, ...SKINS.map(s => h("button", {
+            key: s.id,
+            className: `menu-skin ${this.state.skin === s.id ? "selected" : ""}`,
+            title: s.name,
+            "aria-label": `Use ${s.name} skin`,
+            "aria-pressed": this.state.skin === s.id,
+            onClick: () => this.setState({ skin: s.id })
+          },
+            h("i", { style: { background: `linear-gradient(135deg, ${s.accent} 0%, ${s.body} 42%, ${s.secondary} 100%)` } }),
+            h("span", null, s.name)
+          ))),
+          h("button", { className: "menu-play", onClick: this.play },
+            h("span", null, "PLAY"),
+            h("small", null, "ENTER ARENA")
+          ),
+          h("div", { className: "menu-bottom" },
+            h("div", { className: "menu-best" },
+              h("span", null, "BEST LEVEL"),
+              h("strong", null, this.state.best.toLocaleString())
+            ),
+            h("div", { className: "menu-settings" },
+              h("button", {
+                className: `menu-setting ${this.state.sound ? "on" : ""}`,
+                onClick: () => this.setSound(!this.state.sound),
+                "aria-pressed": this.state.sound
+              }, h("span", null, "SOUND"), h("b", null, this.state.sound ? "ON" : "OFF")),
+              h("button", {
+                className: `menu-setting ${this.state.effects ? "on" : ""}`,
+                onClick: () => this.setEffects(!this.state.effects),
+                "aria-pressed": this.state.effects
+              }, h("span", null, "FX"), h("b", null, this.state.effects ? "ON" : "OFF"))
+            )
           )
         )
       ),
-      h("footer", { className: "launch-loadout" },
-        h("div", { className: "loadout-heading" },
-          h("span", null, "CHOOSE COIL"),
-          h("small", null, "COLOR CHANGES INSTANTLY")
-        ),
-        h("div", { className: "loadout-skins" }, ...SKINS.map(s => h("button", {
-          key: s.id,
-          className: `loadout-skin ${this.state.skin === s.id ? "selected" : ""}`,
-          title: s.name,
-          "aria-label": `Use ${s.name} skin`,
-          "aria-pressed": this.state.skin === s.id,
-          onClick: () => this.setState({ skin: s.id })
-        },
-          h("i", { style: { background: s.body, boxShadow: `inset -5px -5px 0 ${s.secondary}` } }),
-          h("span", null, s.name)
-        ))),
-        h("div", { className: "launch-settings" },
-          h("button", {
-            className: `launch-setting ${this.state.sound ? "on" : ""}`,
-            onClick: () => this.setSound(!this.state.sound),
-            "aria-pressed": this.state.sound
-          }, h("span", null, "SOUND"), h("b", null, this.state.sound ? "ON" : "OFF")),
-          h("button", {
-            className: `launch-setting ${this.state.effects ? "on" : ""}`,
-            onClick: () => this.setEffects(!this.state.effects),
-            "aria-pressed": this.state.effects
-          }, h("span", null, "FX"), h("b", null, this.state.effects ? "ON" : "OFF"))
-        )
+      h("div", { className: "menu-controls" },
+        h("span", null, h("b", null, "STEER"), "MOUSE / DRAG"),
+        h("i"),
+        h("span", null, h("b", null, "BOOST"), "CLICK / SPACE")
       )
     );
   }
