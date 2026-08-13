@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "rebuild": "npm run build && node dist/server/index.js",
-    "test": "node tests/run.mjs && node tests/gameplay.mjs && node tests/responsiveness.mjs",
+    "test": "node tests/run.mjs && node tests/gameplay.mjs && node tests/responsiveness.mjs && node tests/rendering.mjs",
     "test:integration": "node tests/integration.mjs",
     "verify": "npm run build && npm test && npm run test:integration"
   },

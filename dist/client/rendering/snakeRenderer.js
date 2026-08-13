@@ -1,7 +1,21 @@
 import { CONFIG } from "../../shared/config.js";
 import { clamp } from "../../shared/types.js";
 import { darken, skinFor, traceBody, withAlpha } from "./renderMath.js";
-export function drawSnake(env, s, isMe, now, spawnT) {
+const FIRE_DRAGON = createSprites("/assets/snakes/fire-dragon");
+function createSprites(base) {
+    if (typeof Image === "undefined")
+        return undefined;
+    const load = (name) => {
+        const image = new Image();
+        image.src = `${base}/${name}.png`;
+        return image;
+    };
+    return { head: load("head"), body: load("body"), tail: load("tail") };
+}
+function ready(sprites) {
+    return !!sprites && Object.values(sprites).every(image => image.complete && image.naturalWidth > 0);
+}
+export function drawSnake(env, s, isMe, now, spawnT, playerLevel) {
     if (s.body.length < 2)
         return false;
     const { ctx, canvas, camera, effects } = env;
@@ -10,38 +24,88 @@ export function drawSnake(env, s, isMe, now, spawnT) {
     if (!isMe && (Math.abs(head.x - camera.x) > viewX || Math.abs(head.y - camera.y) > viewY))
         return false;
     const palette = skinFor(s.skin);
+    const sprites = s.skin === "ember" && ready(FIRE_DRAGON) ? FIRE_DRAGON : undefined;
     const radius = CONFIG.BODY_RADIUS + 2.15 + clamp((s.mass - CONFIG.START_MASS) * .016, 0, 6.2);
     ctx.save();
     const protectedPulse = s.protected ? .93 + Math.sin(now * .006) * .035 : 1;
     ctx.globalAlpha = (.38 + spawnT * .62) * protectedPulse;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.save();
-    ctx.translate(3.5, 5);
-    traceBody(ctx, s.body);
-    ctx.strokeStyle = "rgba(0,0,0,.28)";
-    ctx.lineWidth = radius * 2.95;
-    ctx.stroke();
-    ctx.restore();
-    traceBody(ctx, s.body);
-    ctx.strokeStyle = "#101218";
-    ctx.lineWidth = radius * 2.80;
-    ctx.stroke();
-    traceBody(ctx, s.body);
-    ctx.strokeStyle = darken(palette.body, .34);
-    ctx.lineWidth = radius * 2.46;
-    ctx.stroke();
-    traceBody(ctx, s.body);
-    ctx.strokeStyle = palette.body;
-    ctx.lineWidth = radius * 2.08;
-    ctx.stroke();
+    if (s.isBoss) {
+        traceBody(ctx, s.body);
+        ctx.strokeStyle = withAlpha("#ff4f9f", .28 + (Math.sin(now * .006) + 1) * .11);
+        ctx.lineWidth = radius * 3.55;
+        ctx.stroke();
+    }
+    if (!sprites) {
+        ctx.save();
+        ctx.translate(3.5, 5);
+        traceBody(ctx, s.body);
+        ctx.strokeStyle = "rgba(0,0,0,.28)";
+        ctx.lineWidth = radius * 2.95;
+        ctx.stroke();
+        ctx.restore();
+        traceBody(ctx, s.body);
+        ctx.strokeStyle = "#101218";
+        ctx.lineWidth = radius * 2.80;
+        ctx.stroke();
+        traceBody(ctx, s.body);
+        ctx.strokeStyle = darken(palette.body, .34);
+        ctx.lineWidth = radius * 2.46;
+        ctx.stroke();
+        traceBody(ctx, s.body);
+        ctx.strokeStyle = palette.body;
+        ctx.lineWidth = radius * 2.08;
+        ctx.stroke();
+    }
     const step = s.body.length > 120 ? 3 : 2;
-    for (let i = s.body.length - 2; i >= 2; i -= step)
-        drawBodySegment(ctx, s.body[i], i, radius, palette, now);
-    drawHead(ctx, s, radius, palette, now, spawnT, effects);
-    drawLabel(ctx, s, radius, isMe, camera.zoom);
+    if (sprites) {
+        drawSpriteTail(ctx, s.body, radius, sprites.tail);
+        for (let i = 2; i <= s.body.length - 2; i += step)
+            drawSpriteBody(ctx, s.body, i, radius, sprites.body);
+        drawSpriteHead(ctx, s, radius, spawnT, sprites.head);
+    }
+    else {
+        for (let i = 2; i <= s.body.length - 2; i += step)
+            drawBodySegment(ctx, s.body[i], i, radius, palette, now);
+        drawHead(ctx, s, radius, palette, now, spawnT, effects);
+    }
+    drawLabel(ctx, s, radius, isMe, camera.zoom, playerLevel);
     ctx.restore();
     return true;
+}
+function drawSpriteBody(ctx, body, index, radius, image) {
+    const p = body[index];
+    const before = body[index - 1];
+    const after = body[Math.min(index + 1, body.length - 1)];
+    const angle = Math.atan2(before.y - after.y, before.x - after.x);
+    const size = radius * 2.48;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(angle);
+    ctx.drawImage(image, -size / 2, -size / 2, size, size);
+    ctx.restore();
+}
+function drawSpriteTail(ctx, body, radius, image) {
+    const tail = body[body.length - 1];
+    const before = body[body.length - 2];
+    const angle = Math.atan2(before.y - tail.y, before.x - tail.x);
+    const width = radius * 4.25, height = radius * 2.65;
+    ctx.save();
+    ctx.translate(tail.x, tail.y);
+    ctx.rotate(angle);
+    ctx.drawImage(image, -width, -height / 2, width, height);
+    ctx.restore();
+}
+function drawSpriteHead(ctx, s, radius, spawnT, image) {
+    const head = s.body[0];
+    const scale = .72 + spawnT * .28;
+    const size = radius * 5.15 * scale;
+    ctx.save();
+    ctx.translate(head.x + Math.cos(s.angle) * radius * .35, head.y + Math.sin(s.angle) * radius * .35);
+    ctx.rotate(s.angle);
+    ctx.drawImage(image, -size * .46, -size / 2, size, size);
+    ctx.restore();
 }
 function drawBodySegment(ctx, p, index, radius, palette, now) {
     const band = Math.floor(index / 4) % 2;
@@ -155,19 +219,20 @@ function drawHead(ctx, s, radius, palette, now, spawnT, effects) {
     }
     ctx.restore();
 }
-function drawLabel(ctx, s, radius, isMe, zoom) {
+function drawLabel(ctx, s, radius, isMe, zoom, playerLevel) {
     const head = s.body[0], invZoom = 1 / zoom;
-    const level = Math.max(1, Math.floor((s.mass - CONFIG.START_MASS) * .85) + 1);
     const nameSize = (isMe ? 17 : 12.5) * invZoom, levelSize = (isMe ? 11 : 8.5) * invZoom, y = head.y - radius * 2.05 - 10 * invZoom;
+    const levelColor = s.isBoss ? "#ff7fbd" : isMe ? "#ffe574" : s.level < playerLevel ? "#7dffad" : s.level > playerLevel ? "#ff7182" : "rgba(235,239,244,.9)";
+    const levelText = s.isBoss ? `BOSS · LV ${s.level}` : `LV ${s.level}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
     ctx.lineJoin = "round";
     ctx.font = `900 ${levelSize}px system-ui, sans-serif`;
     ctx.strokeStyle = "rgba(0,0,0,.88)";
     ctx.lineWidth = Math.max(2, 3.5 * invZoom);
-    ctx.strokeText(`Lv${level}`, head.x, y - nameSize * .92);
-    ctx.fillStyle = isMe ? "#ffe574" : "rgba(235,239,244,.9)";
-    ctx.fillText(`Lv${level}`, head.x, y - nameSize * .92);
+    ctx.strokeText(levelText, head.x, y - nameSize * .92);
+    ctx.fillStyle = levelColor;
+    ctx.fillText(levelText, head.x, y - nameSize * .92);
     ctx.font = `950 ${nameSize}px system-ui, sans-serif`;
     ctx.strokeStyle = "rgba(0,0,0,.92)";
     ctx.lineWidth = Math.max(3, 5.5 * invZoom);

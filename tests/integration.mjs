@@ -18,15 +18,19 @@ try {
   const snapA = await a.next("snapshot", 2500);
   const snapB = await b.next("snapshot", 2500);
   assert.ok(snapA.snakes.some(s => s.id === a.playerId), "client A sees itself");
-  assert.ok(snapA.snakes.some(s => s.id === b.playerId), "client A sees client B in same authoritative room");
-  assert.ok(snapB.snakes.some(s => s.id === a.playerId), "client B sees client A");
-  assert.equal(snapA.leaderboard.length <= 10, true, "leaderboard capped to top ten");
+  assert.equal(snapA.snakes.some(s => s.id === b.playerId), false, "client A cannot see client B's private match");
+  assert.equal(snapB.snakes.some(s => s.id === a.playerId), false, "client B cannot see client A's private match");
+  assert.equal(snapA.match.phase, "GROWTH", "solo match starts in growth phase");
+  assert.ok(snapA.you.level >= 1 && snapA.you.level <= 6, "client A begins at a fresh low level");
+  assert.ok(snapB.you.level >= 1 && snapB.you.level <= 6, "client B begins at a fresh low level");
   assert.ok(snapA.foods.length > 0, "nearby food is streamed");
 
   a.ws.send(JSON.stringify({ type: "input", seq: 1, angle: 1.2, boost: true }));
-  await sleep(250);
-  const moved = await a.next("snapshot", 2500);
-  const movedSelf = moved.snakes.find(s => s.id === a.playerId);
+  let movedSelf;
+  for (let attempt = 0; attempt < 8 && !movedSelf?.boost; attempt++) {
+    const moved = await a.next("snapshot", 2500);
+    movedSelf = moved.snakes.find(s => s.id === a.playerId);
+  }
   assert.equal(movedSelf?.boost, true, "authoritative server applies boost input");
 
   const token = a.resumeToken;
@@ -35,15 +39,25 @@ try {
   const resumed = await connectClient("Alpha", "nova", token);
   assert.equal(resumed.playerId, a.playerId, "reconnect token resumes the same snake");
   assert.equal(resumed.resumed, true, "server marks resumed session");
+  const resumedSnapshot = await resumed.next("snapshot", 2500);
+  assert.ok(resumedSnapshot.match.remainingMs < snapA.match.remainingMs, "reconnect resumes the authoritative timer");
+
+  await sleep(600);
+  resumed.ws.send(JSON.stringify({ type: "respawn" }));
+  const restartedWelcome = await resumed.next("welcome", 2500);
+  const restartedSnapshot = await resumed.next("snapshot", 2500);
+  assert.equal(restartedWelcome.resumeToken, token, "replay keeps the reconnect token");
+  assert.ok(restartedSnapshot.you.level >= 1 && restartedSnapshot.you.level <= 6, "replay resets the player to a fresh low level");
+  assert.ok(restartedSnapshot.match.remainingMs > 89_000, "replay resets the match timer");
 
   resumed.ws.send(JSON.stringify({ type: "leave" }));
   b.ws.send(JSON.stringify({ type: "leave" }));
   await sleep(300);
   const health = await (await fetch(`http://127.0.0.1:${port}/healthz`)).json();
-  assert.equal(health.active, 24, "room returns to target population after humans leave");
-  assert.equal(health.bots, 24, "bot fill recovers after intentional leaves");
+  assert.equal(health.matches, 0, "intentional leaves remove both private matches");
+  assert.equal(health.active, 0, "no snakes remain after private matches are removed");
 
-  console.log("WebSocket multiplayer integration passed", { playerA: a.playerId, playerB: b.playerId, resumed: resumed.resumed });
+  console.log("Private solo-match integration passed", { playerA: a.playerId, playerB: b.playerId, resumed: resumed.resumed });
 } finally {
   child.kill("SIGTERM");
 }

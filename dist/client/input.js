@@ -144,3 +144,4 @@ export class InputController {
             this.emit(this.state.angle, this.state.boost, force);
     }
 }
+//# sourceMappingURL=input.js.map

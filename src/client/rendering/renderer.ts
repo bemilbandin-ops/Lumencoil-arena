@@ -65,7 +65,10 @@ export class GameRenderer {
       const shake = this.effects.getShakeOffset();
       ctx.save(); ctx.translate(width / 2 + shake.x, height / 2 + shake.y); ctx.scale(this.camera.zoom, this.camera.zoom); ctx.translate(-this.camera.x, -this.camera.y);
       drawWorldBoundary(ctx, this.arenaRadius); drawFood(env, pair.next.foods, now);
-      for (const snake of snakes) { const spawnT = this.effects.spawnTForSnake(snake.id, now); if (drawSnake(env, snake, snake.id === this.playerId, now, spawnT)) this.effects.emitBoostTrail(snake); }
+      for (const snake of snakes) {
+        const spawnT = this.effects.spawnTForSnake(snake.id, now);
+        if (drawSnake(env, snake, snake.id === this.playerId, now, spawnT, me?.level ?? 1)) this.effects.emitBoostTrail(snake);
+      }
       this.effects.updateAndDraw(ctx, dt); ctx.restore();
       drawBoundaryWarning(ctx, width, height, this.arenaRadius, me?.body[0]); drawMinimap(ctx, width, height, this.arenaRadius, me?.body[0]);
     } else this.effects.update(dt);

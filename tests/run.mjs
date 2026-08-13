@@ -65,7 +65,7 @@ assert.equal(deaths.length, 1, "human death callback fired");
 counts = world.debugCounts();
 assert.equal(counts.active, CONFIG.TARGET_ROOM_POPULATION, "dead human slot is filled by bot");
 assert.equal(counts.bots, CONFIG.TARGET_ROOM_POPULATION, "bot fills dead human active slot");
-assert.ok(world.foods.size > CONFIG.FOOD_AMBIENT_TARGET, "death creates collectible food trail");
+assert.ok([...world.foods.values()].some(food => food.kind === 2), "death creates collectible food trail");
 
 world.respawnHuman("new-connection");
 counts = world.debugCounts();

@@ -22,3 +22,4 @@ export function previewLocalSnake(snake, targetAngle, boost) {
     });
     return { ...snake, angle, boost, body };
 }
+//# sourceMappingURL=inputPreview.js.map
