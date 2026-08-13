@@ -1,5 +1,6 @@
 import { CONFIG, SKINS } from "../shared/config.js";
 import { resolveBodyContact, resolveHeadContact } from "../shared/combat.js";
+import { levelFromMass, massForLevel } from "../shared/match.js";
 import {
   clamp, distanceSq, normalizeAngle,
   type BotProfile, type DeathStats, type FoodSnapshot, type LeaderboardEntry,
@@ -17,6 +18,8 @@ export type Snake = BotSnake & {
   connectionId?: string;
   disconnectedAt?: number;
   skin: string;
+  level: number;
+  isBoss: boolean;
   targetAngle: number;
   boost: boolean;
   score: number;
@@ -51,12 +54,22 @@ export class GameWorld {
   private readonly foodGrid = new SpatialHash<Food>(CONFIG.FOOD_GRID_SIZE);
   private readonly bodyGrid = new SpatialHash<BodyCell>(CONFIG.SNAKE_GRID_SIZE);
   private events: WorldEvent[] = [];
+  private botReplacementEnabled = true;
   private readonly onHumanDeath: (connectionId: string | undefined, snakeId: string, stats: DeathStats) => void;
+  private readonly onSnakeDeath: (snakeId: string, killerId: string | null) => void;
+  private readonly idPrefix: string;
 
-  constructor(onHumanDeath: (connectionId: string | undefined, snakeId: string, stats: DeathStats) => void) {
+  constructor(
+    onHumanDeath: (connectionId: string | undefined, snakeId: string, stats: DeathStats) => void,
+    onSnakeDeath: (snakeId: string, killerId: string | null) => void = () => {},
+    idPrefix = ""
+  ) {
     this.onHumanDeath = onHumanDeath;
+    this.onSnakeDeath = onSnakeDeath;
+    this.idPrefix = idPrefix;
     for (let i = 0; i < CONFIG.FOOD_AMBIENT_TARGET; i++) this.spawnAmbientFood();
     this.ensurePopulation();
+    this.rebuildGrids(Date.now());
   }
 
   addHuman(connectionId: string, nickname: string, skin: string): Snake {
@@ -119,7 +132,9 @@ export class GameWorld {
     snake.y = fresh.y;
     snake.angle = rand(-Math.PI, Math.PI);
     snake.targetAngle = snake.angle;
-    snake.mass = CONFIG.START_MASS;
+    snake.level = 1;
+    snake.mass = massForLevel(1);
+    snake.isBoss = false;
     snake.score = 0;
     snake.kills = 0;
     snake.boost = false;
@@ -180,6 +195,7 @@ export class GameWorld {
       }
       snakes.push({
         id: s.id, nickname: s.nickname, skin: s.skin,
+        level: s.level, isBoss: s.isBoss,
         mass: round1(s.mass), score: Math.round(s.score), kills: s.kills,
         angle: round3(s.angle), boost: s.boost,
         protected: now - s.spawnedAt < CONFIG.SPAWN_PROTECTION_MS,
@@ -198,6 +214,7 @@ export class GameWorld {
       foods,
       leaderboard: leaderboard.slice(0, 10),
       you: {
+        level: me.level,
         score: Math.round(me.score), mass: round1(me.mass), rank,
         kills: me.kills, survivalSeconds: me.alive ? Math.max(0, Math.floor((now - me.spawnedAt) / 1000)) : me.deathStats?.survivalSeconds ?? 0
       },
@@ -211,6 +228,34 @@ export class GameWorld {
   }
 
   getSnake(id: string): Snake | undefined { return this.snakes.get(id); }
+
+  setSnakeLevel(snake: Snake, level: number): void {
+    snake.level = Math.max(1, Math.floor(level));
+    snake.mass = massForLevel(snake.level);
+    const target = this.targetSegments(snake.mass);
+    while (snake.body.length < target && snake.body.length < CONFIG.MAX_BODY_SEGMENTS) {
+      snake.body.push({ ...snake.body[snake.body.length - 1]! });
+    }
+    if (snake.body.length > target) snake.body.length = target;
+  }
+
+  setBotReplacementEnabled(enabled: boolean): void {
+    this.botReplacementEnabled = enabled;
+  }
+
+  createBoss(level = CONFIG.MATCH_BOSS_LEVEL): Snake {
+    const existing = [...this.snakes.values()].find(s => s.isBoss && s.alive);
+    if (existing) return existing;
+    const boss = this.createSnake(true);
+    boss.nickname = "BOSS";
+    boss.isBoss = true;
+    boss.skin = "violet";
+    boss.brain = createBrain("AGGRESSIVE");
+    this.setSnakeLevel(boss, level);
+    this.snakes.set(boss.id, boss);
+    this.emit({ type: "spawn", snakeId: boss.id, x: boss.x, y: boss.y, skin: boss.skin });
+    return boss;
+  }
 
   getLeaderboard(): LeaderboardEntry[] {
     return [...this.snakes.values()]
@@ -232,12 +277,14 @@ export class GameWorld {
     const p = this.spawnPoint(!isBot);
     const angle = rand(-Math.PI, Math.PI);
     const profile = choose(PROFILES);
-    const mass = CONFIG.START_MASS + (isBot ? rand(0, 26) : 0);
+    const level = isBot ? Math.floor(rand(1, 31)) : 1;
+    const mass = massForLevel(level);
     return {
-      id: `s${this.nextSnakeId++}`,
+      id: `${this.idPrefix}s${this.nextSnakeId++}`,
       nickname: nickname?.trim().slice(0, 18) || (isBot ? `${choose(BOT_NAMES)}${Math.floor(rand(1, 99))}` : "Player"),
       isBot, connectionId,
       skin: SKINS.some(s => s.id === skin) ? skin! : choose(SKINS).id,
+      level, isBoss: false,
       x: p.x, y: p.y, angle, targetAngle: angle, boost: false,
       mass, score: isBot ? Math.max(0, Math.round((mass - CONFIG.START_MASS) * 2.2)) : 0,
       kills: 0, alive: true, spawnedAt: Date.now(),
@@ -299,6 +346,7 @@ export class GameWorld {
   }
 
   private ensurePopulation(): void {
+    if (!this.botReplacementEnabled) return;
     while (this.activePopulation() < CONFIG.TARGET_ROOM_POPULATION) {
       const bot = this.createSnake(true);
       this.snakes.set(bot.id, bot);
@@ -312,7 +360,7 @@ export class GameWorld {
   }
 
   private chooseBotForReplacement(): Snake | undefined {
-    const bots = [...this.snakes.values()].filter(s => s.isBot && s.alive);
+    const bots = [...this.snakes.values()].filter(s => s.isBot && !s.isBoss && s.alive);
     if (!bots.length) return undefined;
     const humans = [...this.snakes.values()].filter(s => !s.isBot && s.alive && s.connectionId);
     if (!humans.length) return bots[0];
@@ -342,11 +390,12 @@ export class GameWorld {
     if (s.boost && !canBoost) s.boost = false;
     const massPenalty = clamp((s.mass - CONFIG.START_MASS) * CONFIG.MASS_SPEED_PENALTY, 0, 35);
     const speed = Math.max(92, (canBoost ? CONFIG.BOOST_SPEED : CONFIG.BASE_SPEED) - massPenalty);
-    if (canBoost) {
+    if (canBoost && !s.isBoss) {
       const before = this.targetSegments(s.mass);
       s.mass = Math.max(CONFIG.MIN_BOOST_MASS, s.mass - CONFIG.BOOST_DRAIN_PER_SECOND * dt);
       const after = this.targetSegments(s.mass);
       for (let i = 0; i < before - after && s.body.length > 1; i++) s.body.pop();
+      s.level = levelFromMass(s.mass);
     }
     s.x += Math.cos(s.angle) * speed * dt;
     s.y += Math.sin(s.angle) * speed * dt;
@@ -390,19 +439,15 @@ export class GameWorld {
   private resolveFood(): void {
     const eaten = new Set<number>();
     for (const s of this.snakes.values()) {
-      if (!s.alive) continue;
+      if (!s.alive || s.isBoss) continue;
       const nearby = this.foodGrid.query(s.x, s.y, CONFIG.FOOD_PICKUP_RADIUS + 16);
       for (const f of nearby) {
         if (eaten.has(f.id)) continue;
         const r = CONFIG.FOOD_PICKUP_RADIUS + f.value * 1.45;
         if (distanceSq(s, f) > r * r) continue;
         eaten.add(f.id);
-        const before = this.targetSegments(s.mass);
-        s.mass += f.value * CONFIG.GROWTH_MASS_PER_FOOD_VALUE;
-        const after = this.targetSegments(s.mass);
-        for (let i = 0; i < after - before && s.body.length < CONFIG.MAX_BODY_SEGMENTS; i++) {
-          s.body.push({ ...s.body[s.body.length - 1]! });
-        }
+        const gainedLevels = f.kind === 1 ? CONFIG.MATCH_RARE_FOOD_LEVELS : CONFIG.MATCH_FOOD_LEVELS;
+        this.setSnakeLevel(s, s.level + gainedLevels);
         s.score += f.value * CONFIG.SCORE_FOOD_MULTIPLIER;
         this.emit({ type: "collect", eaterId: s.id, x: f.x, y: f.y, value: f.value, kind: f.kind });
       }
@@ -465,7 +510,8 @@ export class GameWorld {
       if (!severed.length) continue;
       s.lastBiteAt = now;
       bittenVictims.add(bite.owner.id);
-      bite.owner.mass = Math.max(0, bite.owner.mass - severed.length * CONFIG.SNAKE_SEGMENT_MASS);
+      bite.owner.mass = Math.max(CONFIG.START_MASS, bite.owner.mass - severed.length * CONFIG.LEVEL_MASS_STEP);
+      bite.owner.level = levelFromMass(bite.owner.mass);
       this.makeFoodRoom(severed.length);
       for (const piece of severed) {
         this.spawnFood(piece.x, piece.y, CONFIG.SNAKE_SEGMENT_DROP_VALUE, 2);
@@ -494,6 +540,7 @@ export class GameWorld {
     snake.alive = false;
     snake.boost = false;
     const stats: DeathStats = {
+      level: snake.level,
       score: Math.round(snake.score), mass: round1(snake.mass),
       survivalSeconds: Math.max(0, Math.round((Date.now() - snake.spawnedAt) / 1000)), kills: snake.kills
     };
@@ -509,6 +556,7 @@ export class GameWorld {
     } else {
       this.onHumanDeath(snake.connectionId, snake.id, stats);
     }
+    this.onSnakeDeath(snake.id, killerId);
   }
 
   private dropDeathFood(s: Snake): void {

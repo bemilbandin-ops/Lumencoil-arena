@@ -145,3 +145,4 @@ export function createBrain(profile) {
     };
 }
 function rand(min, max) { return min + Math.random() * (max - min); }
+//# sourceMappingURL=botAI.js.map

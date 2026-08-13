@@ -43,6 +43,10 @@ const DEAD_COLORS: readonly FoodColors[] = [
   { shell: "#d781df", center: "#9147c8", accent: "#ffc1ec", outline: "#351640", shadow: "rgba(43,14,47,.52)" }
 ];
 
+const SPRITE_SIZE = 48;
+const SPRITE_SCALE = 2;
+const spriteCache = new Map<string, HTMLCanvasElement>();
+
 export function drawFood(env: VisualEnv, foods: FoodSnapshot[], now: number): void {
   const { ctx, canvas, camera, effects } = env;
   const viewX = canvas.clientWidth / camera.zoom * .65 + 300, viewY = canvas.clientHeight / camera.zoom * .65 + 300;
@@ -54,11 +58,26 @@ export function drawFood(env: VisualEnv, foods: FoodSnapshot[], now: number): vo
     const variant = PEARL_VARIANTS[variantIndex]!;
     const rarePulse = f.kind === 1 ? 1 + Math.sin(now * .0017 + variantIndex * 2.1) * .045 : 1;
     const kindScale = f.kind === 1 ? 1.22 : f.kind === 2 ? 1.10 : 1;
-    const radius = (4.9 + Math.min(5.4, f.value * 1.15)) * kindScale * rarePulse;
+    const radius = (4.9 + Math.min(5.4, f.value * 1.15)) * kindScale;
     const colors = f.kind === 2 ? DEAD_COLORS[variantIndex]! : f.kind === 1 ? RARE_COLORS[variantIndex]! : AMBIENT_COLORS[variantIndex]!;
-
-    drawPearl(ctx, f, radius, variant, colors, effects);
+    const sprite = foodSprite(f, radius, variantIndex, variant, colors, effects);
+    const size = SPRITE_SIZE * rarePulse;
+    ctx.drawImage(sprite, f.x - size / 2, f.y - size / 2, size, size);
   }
+}
+
+function foodSprite(food: FoodSnapshot, radius: number, variantIndex: number, variant: PearlVariant, colors: FoodColors, effects: boolean): HTMLCanvasElement {
+  const key = `${food.kind}:${food.value}:${variantIndex}:${food.kind === 1 && effects ? 1 : 0}`;
+  const cached = spriteCache.get(key);
+  if (cached) return cached;
+  const canvas = document.createElement("canvas");
+  canvas.width = SPRITE_SIZE * SPRITE_SCALE;
+  canvas.height = SPRITE_SIZE * SPRITE_SCALE;
+  const ctx = canvas.getContext("2d")!;
+  ctx.setTransform(SPRITE_SCALE, 0, 0, SPRITE_SCALE, canvas.width / 2, canvas.height / 2);
+  drawPearl(ctx, { ...food, x: 0, y: 0 }, radius, variant, colors, effects);
+  spriteCache.set(key, canvas);
+  return canvas;
 }
 
 function drawPearl(ctx: CanvasRenderingContext2D, food: FoodSnapshot, radius: number, variant: PearlVariant, colors: FoodColors, effects: boolean): void {

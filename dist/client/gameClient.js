@@ -147,7 +147,8 @@ export class GameClient {
             while (this.replayBuffer.length && this.replayBuffer[0].at < cutoff)
                 this.replayBuffer.shift();
             this.processEvents(msg.events);
-            this.callbacks.onStats({ ...msg.you, leaderboard: msg.leaderboard });
+            if (msg.match)
+                this.callbacks.onStats({ ...msg.you, match: msg.match });
             return;
         }
         if (msg.type === "death") {

@@ -8,8 +8,9 @@ export const CONFIG = {
     SNAPSHOT_SNAKE_RADIUS: 2450,
     EVENT_VISIBILITY_RADIUS: 2600,
     START_MASS: 42,
+    LEVEL_MASS_STEP: 3.8,
     MIN_BOOST_MASS: 28,
-    START_SEGMENTS: 24,
+    START_SEGMENTS: 8,
     SEGMENT_SPACING: 13,
     HEAD_RADIUS: 13,
     BODY_RADIUS: 10,
@@ -38,6 +39,12 @@ export const CONFIG = {
     SNAKE_SEGMENT_DROP_VALUE: 5,
     SNAKE_HEAD_DROP_VALUE: 10,
     SNAKE_SEGMENT_MASS: 3.8,
+    MATCH_GROWTH_MS: 75_000,
+    MATCH_BOSS_MS: 15_000,
+    MATCH_BOSS_LEVEL: 80,
+    MATCH_FOOD_LEVELS: 1,
+    MATCH_RARE_FOOD_LEVELS: 3,
+    MATCH_RESTART_COOLDOWN_MS: 500,
     BOT_REACTION_MIN: 0.08,
     BOT_REACTION_MAX: 0.22,
     BOT_VIEW_DISTANCE: 820,
@@ -61,7 +68,7 @@ export const CONFIG = {
 };
 export const SKINS = [
     { id: "nova", name: "Nova", body: "#66f4ff", accent: "#d5fdff", secondary: "#4a7cff", glow: "#2cd8ef", pattern: "pulse" },
-    { id: "ember", name: "Ember", body: "#ff655f", accent: "#ffe2a3", secondary: "#ff2f76", glow: "#ff3e64", pattern: "stripe" },
+    { id: "ember", name: "Fire Dragon", body: "#ff655f", accent: "#ffe2a3", secondary: "#ff2f76", glow: "#ff3e64", pattern: "stripe" },
     { id: "acid", name: "Acid", body: "#a7ff4f", accent: "#f1ffc9", secondary: "#43df72", glow: "#63ef47", pattern: "spark" },
     { id: "violet", name: "Violet", body: "#b581ff", accent: "#f0ddff", secondary: "#7353ff", glow: "#8a58ff", pattern: "dual" },
     { id: "sunset", name: "Sunset", body: "#ffb23d", accent: "#fff09a", secondary: "#ff5c70", glow: "#ff7650", pattern: "stripe" },
@@ -69,3 +76,4 @@ export const SKINS = [
     { id: "mono", name: "Ghost", body: "#dbe4f4", accent: "#ffffff", secondary: "#7b879c", glow: "#aab6cb", pattern: "dual" },
     { id: "rose", name: "Rose", body: "#ff79c9", accent: "#ffe2f4", secondary: "#a35bff", glow: "#ff5bc4", pattern: "spark" }
 ];
+//# sourceMappingURL=config.js.map

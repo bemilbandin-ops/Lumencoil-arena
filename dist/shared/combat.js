@@ -1,6 +1,6 @@
-import { CONFIG } from "./config.js";
+import { levelFromMass } from "./match.js";
 export function combatLevel(mass) {
-    return Math.max(1, Math.floor((mass - CONFIG.START_MASS) * .85) + 1);
+    return levelFromMass(mass);
 }
 export function resolveHeadContact(attackerMass, defenderMass) {
     const attackerLevel = combatLevel(attackerMass);
@@ -14,3 +14,4 @@ export function resolveHeadContact(attackerMass, defenderMass) {
 export function resolveBodyContact(attackerMass, defenderMass) {
     return combatLevel(attackerMass) > combatLevel(defenderMass) ? "attacker" : "none";
 }
+//# sourceMappingURL=combat.js.map

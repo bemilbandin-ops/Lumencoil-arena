@@ -5,7 +5,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { CONFIG, SKINS } from "../shared/config.js";
-import { GameWorld } from "./game.js";
+import { MatchSession } from "./matchSession.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "../..");
 const PUBLIC = path.join(ROOT, "public");
@@ -192,13 +192,6 @@ class WsPeer {
 }
 const peers = new Map();
 const sessions = new Map();
-const world = new GameWorld((connectionId, snakeId, stats) => {
-    if (connectionId)
-        peers.get(connectionId)?.send({ type: "death", stats });
-    const session = findSessionBySnake(snakeId);
-    if (session && !connectionId)
-        session.expiresAt = Math.max(session.expiresAt ?? 0, Date.now() + CONFIG.RECONNECT_GRACE_MS);
-});
 let peerCounter = 1;
 const mime = {
     ".html": "text/html; charset=utf-8",
@@ -230,7 +223,7 @@ const requestHandler = (req, res) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     if (url.pathname === "/healthz") {
         res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        res.end(JSON.stringify({ ok: true, sessions: sessions.size, peers: peers.size, ...world.debugCounts() }));
+        res.end(JSON.stringify({ ok: true, sessions: sessions.size, peers: peers.size, ...aggregateMatchCounts() }));
         return;
     }
     const base = url.pathname.startsWith("/dist/") ? ROOT : PUBLIC;
@@ -279,23 +272,23 @@ server.on("upgrade", (req, socket) => {
             const requestedToken = typeof msg.resumeToken === "string" ? msg.resumeToken : "";
             const session = requestedToken ? sessions.get(requestedToken) : undefined;
             if (session && !session.peerId && (!session.expiresAt || session.expiresAt > Date.now())) {
-                const snake = world.reattachHuman(session.snakeId, peer.id);
+                const snake = session.match.reattach(peer.id);
                 if (snake) {
+                    session.snakeId = snake.id;
                     session.peerId = peer.id;
                     session.expiresAt = undefined;
                     peer.joined = true;
                     peer.sessionToken = session.token;
                     peer.send({ type: "welcome", playerId: snake.id, arenaRadius: CONFIG.ARENA_RADIUS, resumeToken: session.token, resumed: true });
-                    if (!snake.alive && snake.deathStats)
-                        peer.send({ type: "death", stats: snake.deathStats });
                     return;
                 }
                 sessions.delete(session.token);
             }
             try {
-                const snake = world.addHuman(peer.id, nickname, skin);
+                const match = new MatchSession(peer.id, nickname, skin);
+                const snake = match.world.getSnake(match.playerId);
                 const token = crypto.randomBytes(18).toString("base64url");
-                sessions.set(token, { token, snakeId: snake.id, peerId: peer.id });
+                sessions.set(token, { token, match, snakeId: snake.id, peerId: peer.id });
                 peer.joined = true;
                 peer.sessionToken = token;
                 peer.send({ type: "welcome", playerId: snake.id, arenaRadius: CONFIG.ARENA_RADIUS, resumeToken: token, resumed: false });
@@ -306,16 +299,21 @@ server.on("upgrade", (req, socket) => {
             }
             return;
         }
+        const session = peer.sessionToken ? sessions.get(peer.sessionToken) : undefined;
         if (msg.type === "input" && peer.joined) {
-            world.applyHumanInput(peer.id, Number(msg.seq), Number(msg.angle), Boolean(msg.boost), Date.now());
+            session?.match.applyInput(peer.id, Number(msg.seq), Number(msg.angle), Boolean(msg.boost), Date.now());
         }
         else if (msg.type === "respawn" && peer.joined) {
-            world.respawnHuman(peer.id);
+            const snake = session?.match.restart(peer.id, undefined, undefined, Date.now());
+            if (snake && session) {
+                session.snakeId = snake.id;
+                peer.send({ type: "welcome", playerId: snake.id, arenaRadius: CONFIG.ARENA_RADIUS, resumeToken: session.token, resumed: false });
+            }
         }
         else if (msg.type === "leave" && peer.joined) {
             const token = peer.sessionToken;
-            world.removeHuman(peer.id);
             peer.joined = false;
+            peer.sessionToken = null;
             if (token)
                 sessions.delete(token);
             peer.sessionToken = null;
@@ -329,16 +327,13 @@ server.on("upgrade", (req, socket) => {
         peers.delete(peer.id);
         if (!peer.joined)
             return;
-        const snake = world.detachHuman(peer.id);
         const token = peer.sessionToken;
         if (token) {
             const session = sessions.get(token);
             if (session) {
+                session.match.detach(peer.id);
                 session.peerId = undefined;
                 session.expiresAt = Date.now() + CONFIG.RECONNECT_GRACE_MS;
-            }
-            else if (snake) {
-                sessions.set(token, { token, snakeId: snake.id, expiresAt: Date.now() + CONFIG.RECONNECT_GRACE_MS });
             }
         }
     };
@@ -349,7 +344,9 @@ setInterval(() => {
     const now = performance.now();
     const dt = Math.min(.1, (now - lastTick) / 1000);
     lastTick = now;
-    world.tick(dt);
+    const wallNow = Date.now();
+    for (const session of sessions.values())
+        session.match.tick(dt, wallNow);
 }, tickMs);
 setInterval(() => {
     for (const [id, peer] of peers) {
@@ -357,7 +354,8 @@ setInterval(() => {
             peer.close(1001, "Timed out");
             continue;
         }
-        const snapshot = world.snapshotFor(id);
+        const session = peer.sessionToken ? sessions.get(peer.sessionToken) : undefined;
+        const snapshot = session?.match.snapshotFor(id);
         if (snapshot)
             peer.send(snapshot);
     }
@@ -368,7 +366,6 @@ setInterval(() => {
         peer.send({ type: "ping", at: now });
     for (const [token, session] of sessions) {
         if (!session.peerId && session.expiresAt && session.expiresAt <= now) {
-            world.expireHuman(session.snakeId);
             sessions.delete(token);
         }
     }
@@ -376,15 +373,20 @@ setInterval(() => {
 server.listen(PORT, HOST, () => {
     const scheme = tlsCert && tlsKey ? "https" : "http";
     console.log(`Lumencoil Arena ready at ${scheme}://localhost:${PORT}`);
-    console.log("Initial population:", world.debugCounts());
+    console.log("Private solo matches ready");
 });
 function sanitizeNickname(value) {
     return value.replace(/[^\p{L}\p{N}_ .-]/gu, "").trim().slice(0, 18) || "Player";
 }
-function findSessionBySnake(snakeId) {
-    for (const session of sessions.values())
-        if (session.snakeId === snakeId)
-            return session;
-    return undefined;
+function aggregateMatchCounts() {
+    const totals = { matches: sessions.size, humans: 0, bots: 0, active: 0, foods: 0 };
+    for (const session of sessions.values()) {
+        const counts = session.match.debugCounts();
+        totals.humans += counts.humans;
+        totals.bots += counts.bots;
+        totals.active += counts.active;
+        totals.foods += counts.foods;
+    }
+    return totals;
 }
 //# sourceMappingURL=index.js.map

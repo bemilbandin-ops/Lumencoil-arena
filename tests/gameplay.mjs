@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
 import { CONFIG } from "../dist/shared/config.js";
 import { combatLevel, resolveBodyContact, resolveHeadContact } from "../dist/shared/combat.js";
+import { levelFromMass, massForLevel } from "../dist/shared/match.js";
 import { GameWorld } from "../dist/server/game.js";
+import { MatchSession } from "../dist/server/matchSession.js";
 
 assert.ok(CONFIG.ARENA_RADIUS <= 1650, `arena radius must be tightly populated; got ${CONFIG.ARENA_RADIUS}`);
 assert.ok(CONFIG.SPAWN_SAFE_RADIUS <= 300, `safe radius must fit 24 snakes without central fallback; got ${CONFIG.SPAWN_SAFE_RADIUS}`);
+assert.equal(levelFromMass(massForLevel(1)), 1);
+assert.equal(levelFromMass(massForLevel(81)), 81);
+assert.equal(CONFIG.MATCH_GROWTH_MS, 75_000);
+assert.equal(CONFIG.MATCH_BOSS_MS, 15_000);
+assert.equal(CONFIG.START_SEGMENTS, 8);
+assert.equal(resolveHeadContact(massForLevel(81), massForLevel(80)), "attacker");
+assert.equal(resolveHeadContact(massForLevel(80), massForLevel(80)), "none");
 
 assert.ok(combatLevel(60) > combatLevel(45));
 assert.equal(resolveHeadContact(60, 45), "attacker", "higher level can eat a lower-level head");
@@ -53,7 +62,7 @@ function duelWorld() {
   assert.equal(bot.alive, true, "middle-body cut must not kill victim before head is eaten");
   assert.deepEqual(bot.body, originalBody.slice(0, 3), "middle hit keeps the exact head-side prefix and cuts off the entire tail-side suffix");
   assert.equal(world.foods.size, foodsBefore + severed.length, "every severed tail segment becomes exactly one ground pickup");
-  assert.equal(bot.mass, massBefore - severed.length * CONFIG.SNAKE_SEGMENT_MASS, "victim loses mass for every severed segment");
+  assert.equal(bot.mass, Math.max(CONFIG.START_MASS, massBefore - severed.length * CONFIG.LEVEL_MASS_STEP), "victim loses levels for severed segments without dropping below level one");
   for (const piece of severed) {
     const matches = [...world.foods.values()].filter(f => f.kind === 2 && Math.abs(f.x - piece.x) < .001 && Math.abs(f.y - piece.y) < .001);
     assert.equal(matches.length, 1, `severed segment at ${piece.x},${piece.y} drops exactly one pickup at that position`);
@@ -116,6 +125,49 @@ function duelWorld() {
   world.resolveCollisions(now);
   assert.equal(human.alive, true, "equal-level head contact is nonlethal");
   assert.equal(bot.alive, true, "equal-level opponent also remains alive");
+}
+
+{
+  const session = new MatchSession("match-human", "Hero", "nova", 1_000);
+  let snapshot = session.snapshotFor("match-human", 1_000);
+  assert.equal(snapshot?.match?.phase, "GROWTH");
+  assert.equal(snapshot?.match?.remainingMs, 90_000);
+  assert.equal(snapshot?.you.level, 1);
+
+  session.tick(0, 76_000);
+  snapshot = session.snapshotFor("match-human", 76_000);
+  const boss = [...session.world.snakes.values()].find(s => s.isBoss);
+  assert.equal(snapshot?.match?.phase, "BOSS");
+  assert.equal(boss?.level, 80);
+  boss.boost = true;
+  boss.brain.timer = 999;
+  session.world.tick(1);
+  assert.equal(boss.level, 80, "boss boost cannot drain its fixed combat level");
+
+  const player = session.world.getHumanByConnection("match-human");
+  assert.ok(player && boss);
+  for (const [id, snake] of [...session.world.snakes]) if (snake !== player && snake !== boss) session.world.snakes.delete(id);
+  session.world.setSnakeLevel(player, 81);
+  player.spawnedAt = boss.spawnedAt = Date.now() - CONFIG.SPAWN_PROTECTION_MS - 100;
+  player.x = boss.x = 0; player.y = boss.y = 0;
+  player.body[0] = { x: 0, y: 0 }; boss.body[0] = { x: 0, y: 0 };
+  session.world.resolveCollisions(Date.now());
+  session.tick(0, 76_001);
+  assert.equal(session.snapshotFor("match-human", 76_001)?.match?.result, "WIN");
+
+  const restarted = session.restart("match-human", "Hero", "nova", 77_000);
+  assert.ok(restarted);
+  snapshot = session.snapshotFor("match-human", 77_000);
+  assert.equal(snapshot?.match?.phase, "GROWTH");
+  assert.equal(snapshot?.match?.remainingMs, 90_000);
+  assert.equal(snapshot?.you.level, 1);
+  assert.equal(snapshot?.you.kills, 0);
+}
+
+{
+  const session = new MatchSession("timeout-human", "Hero", "nova", 1_000);
+  session.tick(0, 91_001);
+  assert.equal(session.snapshotFor("timeout-human", 91_001)?.match?.result, "DEFEAT");
 }
 
 // Seeded spawn distribution: the initial bot fill must not collapse into a central fallback pile.

@@ -1,10 +1,11 @@
 import { CONFIG } from "../shared/config.js";
-import { clamp, type DeathStats, type LeaderboardEntry, type SelfStats, type ServerMessage, type SnapshotMessage, type WorldEvent } from "../shared/types.js";
+import type { MatchSnapshot } from "../shared/match.js";
+import { clamp, type DeathStats, type SelfStats, type ServerMessage, type SnapshotMessage, type WorldEvent } from "../shared/types.js";
 import { GameAudio } from "./audio.js";
 import { InputController } from "./input.js";
 import { GameRenderer, type RenderPair } from "./renderer.js";
 
-type UiStats = SelfStats & { leaderboard: LeaderboardEntry[] };
+type UiStats = SelfStats & { match: MatchSnapshot };
 type GameCallbacks = {
   onPhase: (phase: "connecting" | "playing" | "reconnecting" | "failed") => void;
   onStats: (stats: UiStats) => void;
@@ -149,7 +150,7 @@ export class GameClient {
       const cutoff = performance.now() - 5200;
       while (this.replayBuffer.length && this.replayBuffer[0]!.at < cutoff) this.replayBuffer.shift();
       this.processEvents(msg.events);
-      this.callbacks.onStats({ ...msg.you, leaderboard: msg.leaderboard });
+      if (msg.match) this.callbacks.onStats({ ...msg.you, match: msg.match });
       return;
     }
 

@@ -1,3 +1,5 @@
+import type { MatchSnapshot } from "./match.js";
+
 export type Vec2 = { x: number; y: number };
 export type BotProfile = "PASSIVE" | "NORMAL" | "AGGRESSIVE" | "GREEDY" | "CAUTIOUS";
 
@@ -5,6 +7,8 @@ export type SnakeSnapshot = {
   id: string;
   nickname: string;
   skin: string;
+  level: number;
+  isBoss: boolean;
   mass: number;
   score: number;
   kills: number;
@@ -23,6 +27,7 @@ export type WorldEvent =
   | { id: number; at: number; type: "spawn"; snakeId: string; x: number; y: number; skin: string };
 
 export type SelfStats = {
+  level: number;
   score: number;
   mass: number;
   rank: number;
@@ -38,9 +43,11 @@ export type SnapshotMessage = {
   leaderboard: LeaderboardEntry[];
   you: SelfStats;
   events: WorldEvent[];
+  match?: MatchSnapshot;
 };
 
 export type DeathStats = {
+  level: number;
   score: number;
   mass: number;
   survivalSeconds: number;

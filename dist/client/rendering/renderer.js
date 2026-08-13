@@ -72,7 +72,7 @@ export class GameRenderer {
             drawFood(env, pair.next.foods, now);
             for (const snake of snakes) {
                 const spawnT = this.effects.spawnTForSnake(snake.id, now);
-                if (drawSnake(env, snake, snake.id === this.playerId, now, spawnT))
+                if (drawSnake(env, snake, snake.id === this.playerId, now, spawnT, me?.level ?? 1))
                     this.effects.emitBoostTrail(snake);
             }
             this.effects.updateAndDraw(ctx, dt);

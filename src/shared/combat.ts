@@ -1,10 +1,10 @@
-import { CONFIG } from "./config.js";
+import { levelFromMass } from "./match.js";
 
 export type HeadContactOutcome = "attacker" | "defender" | "none";
 export type BodyContactOutcome = "attacker" | "none";
 
 export function combatLevel(mass: number): number {
-  return Math.max(1, Math.floor((mass - CONFIG.START_MASS) * .85) + 1);
+  return levelFromMass(mass);
 }
 
 export function resolveHeadContact(attackerMass: number, defenderMass: number): HeadContactOutcome {
